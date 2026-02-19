@@ -1,0 +1,478 @@
+[
+  {
+    "id": 33,
+    "signature": "4CkxNzazsMv16tVxghLvJAdbZwpLYmYvVcR7YVaHypyasX24GAPAShwvLSjr71vNNdBMXTwWeT3mPa5mWCtBp6Ki",
+    "instruction_index": 2,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "instruction_name": "InitiateFlashFill",
+    "accounts": [
+      {
+        "is_signer": true,
+        "is_writable": false,
+        "name": "keeper",
+        "pubkey": "JD25qVdtd65FoiXNmR89JjmoJdYk9sjYQeSTZAALFiMy"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "dca",
+        "pubkey": "3nsTjVJTwwGvXqDRgqNCZAQKwt4QMVhHHqvyseCNR3YX"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "input_mint",
+        "pubkey": "So11111111111111111111111111111111111111112"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "keeper_in_ata",
+        "pubkey": "FZ4Jcx4v2Sfc1Dn9kt89iUa921aHZ7jVtTt75498GKab"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "in_ata",
+        "pubkey": "4zqNL56E7W61iDiYLEW1WXcqMmFyaXHSvDJyjWx4iXnW"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "out_ata",
+        "pubkey": "2HXokq2BqweFreAUaM1hCyMxsWdjLyBR2KQtizVh65Qg"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "instructions_sysvar",
+        "pubkey": "Sysvar1nstructions1111111111111111111111111"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "system_program",
+        "pubkey": "11111111111111111111111111111111"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "token_program",
+        "pubkey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "associated_token_program",
+        "pubkey": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+      }
+    ],
+    "args": {
+      "InitiateFlashFill": {}
+    },
+    "slot": 400306759
+  },
+  {
+    "id": 34,
+    "signature": "4CkxNzazsMv16tVxghLvJAdbZwpLYmYvVcR7YVaHypyasX24GAPAShwvLSjr71vNNdBMXTwWeT3mPa5mWCtBp6Ki",
+    "instruction_index": 4,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "instruction_name": "FulfillFlashFill",
+    "accounts": [
+      {
+        "is_signer": true,
+        "is_writable": false,
+        "name": "keeper",
+        "pubkey": "JD25qVdtd65FoiXNmR89JjmoJdYk9sjYQeSTZAALFiMy"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "dca",
+        "pubkey": "3nsTjVJTwwGvXqDRgqNCZAQKwt4QMVhHHqvyseCNR3YX"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "input_mint",
+        "pubkey": "So11111111111111111111111111111111111111112"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "output_mint",
+        "pubkey": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "keeper_in_ata",
+        "pubkey": "FZ4Jcx4v2Sfc1Dn9kt89iUa921aHZ7jVtTt75498GKab"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "in_ata",
+        "pubkey": "4zqNL56E7W61iDiYLEW1WXcqMmFyaXHSvDJyjWx4iXnW"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "out_ata",
+        "pubkey": "2HXokq2BqweFreAUaM1hCyMxsWdjLyBR2KQtizVh65Qg"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "fee_authority",
+        "pubkey": "CpoD6tWAsMDeyvVG2q2rD1JbDY6d4AujnvAn2NdrhZV2"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "fee_ata",
+        "pubkey": "ETAJVS8v93vuZG7bT1gRPuJemYRuu8FNGDsKvN1HWV5h"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "instructions_sysvar",
+        "pubkey": "Sysvar1nstructions1111111111111111111111111"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "system_program",
+        "pubkey": "11111111111111111111111111111111"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "token_program",
+        "pubkey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "associated_token_program",
+        "pubkey": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "event_authority",
+        "pubkey": "Cspp27eGUDMXxPEdhmEXFVRn6Lt1L7xJyALF3nmnWoBj"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "program",
+        "pubkey": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M"
+      }
+    ],
+    "args": {
+      "FulfillFlashFill": {
+        "repay_amount": 564458640
+      }
+    },
+    "slot": 400306759
+  },
+  {
+    "id": 63,
+    "signature": "3PcYuytRPDJGxUUYj2z8Up2e2f4irgmzXRvAm8PnezVZfw7RcU9ZdsY3Ngav4ETfKomNV4SBiZjZ6QSvyRgeSTSY",
+    "instruction_index": 6,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "instruction_name": "EndAndClose",
+    "accounts": [
+      {
+        "is_signer": true,
+        "is_writable": false,
+        "name": "keeper",
+        "pubkey": "JD25qVdtd65FoiXNmR89JjmoJdYk9sjYQeSTZAALFiMy"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "dca",
+        "pubkey": "5gadwswXkAacjtyPsPFGhfEtTdyxthUtvwRekfhUgYX"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "input_mint",
+        "pubkey": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "output_mint",
+        "pubkey": "E3oEF6TZb5DssCqwyXRt31AUEnGqvcHeVcyGvLiqpump"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "in_ata",
+        "pubkey": "CJ2kU1VmQNKqAKfupfDTB95zxaraFk5cj3Q15KR3t4ud"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "out_ata",
+        "pubkey": "4895d36vpbCXCsNMv1hdPvTjeiacRxom9HxbvMyXKWyU"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "user",
+        "pubkey": "F1sQKTHfoAE97FAwZ4ttWw2yJGERTRVFpXetREQ9oHY7"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "user_out_ata",
+        "pubkey": "AYR8QRmxHz34sm61jxm9wxXKik1asLY98hZSSxcf4NE6"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "init_user_out_ata",
+        "pubkey": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "intermediate_account",
+        "pubkey": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "system_program",
+        "pubkey": "11111111111111111111111111111111"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "token_program",
+        "pubkey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "associated_token_program",
+        "pubkey": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "event_authority",
+        "pubkey": "Cspp27eGUDMXxPEdhmEXFVRn6Lt1L7xJyALF3nmnWoBj"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "program",
+        "pubkey": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M"
+      }
+    ],
+    "args": {
+      "EndAndClose": {}
+    },
+    "slot": 400306787
+  },
+  {
+    "id": 118,
+    "signature": "5LoYg3EaBeiFQHpfhZyWV8TaSG8cT3EN4yd4tan5NW1td6EeeezQXjXSx2mQ7HEaBBULkPbtb6qXRRSqTxq5TwsJ",
+    "instruction_index": 0,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "instruction_name": "OpenDcaV2",
+    "accounts": [
+      {
+        "is_signer": false,
+        "is_writable": true,
+        "name": "dca",
+        "pubkey": "8rpaWbajA8xmPNMZQGP5i2LQapHgbAxexzrrVds9wL2Y"
+      },
+      {
+        "is_signer": true,
+        "is_writable": true,
+        "name": "user",
+        "pubkey": "7XZdwc12n2PCk2rpkBjvqYt1q4rGSHCQWfkoNhYitNCQ"
+      },
+      {
+        "is_signer": true,
+        "is_writable": true,
+        "name": "payer",
+        "pubkey": "7XZdwc12n2PCk2rpkBjvqYt1q4rGSHCQWfkoNhYitNCQ"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "input_mint",
+        "pubkey": "6dKCoWjpj5MFU5gWDEFdpUUeBasBLK3wLEwhUzQPAa1e"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "output_mint",
+        "pubkey": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+      },
+      {
+        "is_signer": false,
+        "is_writable": true,
+        "name": "user_ata",
+        "pubkey": "DEBnJ53w9KmSjnygvLqQRysD68newY2MUjkBo35rhXsH"
+      },
+      {
+        "is_signer": false,
+        "is_writable": true,
+        "name": "in_ata",
+        "pubkey": "9J7Nmi4vD2irEJPxV7GRQCPCuGxrQofvw9q1bknzzDSF"
+      },
+      {
+        "is_signer": false,
+        "is_writable": true,
+        "name": "out_ata",
+        "pubkey": "8NRjW49Uv7zswKoX3Nwe8FefzRd9s4jgwSKV5FSWSK8M"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "system_program",
+        "pubkey": "11111111111111111111111111111111"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "token_program",
+        "pubkey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "associated_token_program",
+        "pubkey": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "event_authority",
+        "pubkey": "Cspp27eGUDMXxPEdhmEXFVRn6Lt1L7xJyALF3nmnWoBj"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "program",
+        "pubkey": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M"
+      }
+    ],
+    "args": {
+      "OpenDcaV2": {
+        "application_idx": 1771111568,
+        "cycle_frequency": 60,
+        "in_amount": 2015033311928,
+        "in_amount_per_cycle": 403006662386,
+        "max_out_amount": 0,
+        "min_out_amount": 0,
+        "start_at": 0
+      }
+    },
+    "slot": 400306912
+  },
+  {
+    "id": 450,
+    "signature": "4vUF2XfZQXeEJ8AarEy19U2dZFhUGcPtJouih5FCPfdhhwq2F6TjAGTVGMRdFTYKHqN3tBTvRMk7FWhJxzuPtwDZ",
+    "instruction_index": 2,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "instruction_name": "CloseDca",
+    "accounts": [
+      {
+        "is_signer": true,
+        "is_writable": true,
+        "name": "user",
+        "pubkey": "GdSmhYHGFjb1QRDJ3dtpbA9TYNJaqEJsZHuUxpksEKNN"
+      },
+      {
+        "is_signer": false,
+        "is_writable": true,
+        "name": "dca",
+        "pubkey": "6JYMvo5PQS6rM6xjTZfjvfNHGdtMMxCiQgpoJ7SsUUpQ"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "input_mint",
+        "pubkey": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "output_mint",
+        "pubkey": "Ab98dbe7st4dNKHgtWsP27zJHrfLNi7Gmqvx4j42BAGS"
+      },
+      {
+        "is_signer": false,
+        "is_writable": true,
+        "name": "in_ata",
+        "pubkey": "FX6geNfvQCgcQL6bjc4M8zX5FfVMGXTyuK5yZWWY3b2c"
+      },
+      {
+        "is_signer": false,
+        "is_writable": true,
+        "name": "out_ata",
+        "pubkey": "Aw5b8n23Gfpa414Mr39sn5cEg2XtZdftF1Frxc7w7gVk"
+      },
+      {
+        "is_signer": false,
+        "is_writable": true,
+        "name": "user_in_ata",
+        "pubkey": "FDuuqiYuZnS74ACJqZrtZgWvrGQPNn1qDkAj1tMLNrPW"
+      },
+      {
+        "is_signer": false,
+        "is_writable": true,
+        "name": "user_out_ata",
+        "pubkey": "64Qpdk4am5zxsgB1xtoMv1ZUyyCDQsoDVGzrSJzEBmVd"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "system_program",
+        "pubkey": "11111111111111111111111111111111"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "token_program",
+        "pubkey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "associated_token_program",
+        "pubkey": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "event_authority",
+        "pubkey": "Cspp27eGUDMXxPEdhmEXFVRn6Lt1L7xJyALF3nmnWoBj"
+      },
+      {
+        "is_signer": false,
+        "is_writable": false,
+        "name": "program",
+        "pubkey": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M"
+      }
+    ],
+    "args": {
+      "CloseDca": {}
+    },
+    "slot": 400308298
+  }
+]

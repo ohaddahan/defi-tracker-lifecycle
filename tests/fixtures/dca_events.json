@@ -1,0 +1,128 @@
+[
+  {
+    "id": 6,
+    "signature": "4CkxNzazsMv16tVxghLvJAdbZwpLYmYvVcR7YVaHypyasX24GAPAShwvLSjr71vNNdBMXTwWeT3mPa5mWCtBp6Ki",
+    "event_index": 4,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "event_name": "CollectedFeeEvent",
+    "fields": {
+      "CollectedFeeEvent": {
+        "amount": 570099,
+        "dca_key": "3nsTjVJTwwGvXqDRgqNCZAQKwt4QMVhHHqvyseCNR3YX",
+        "mint": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+        "user_key": "31o3cjq1yr2ssTrAvXHEGa5MUPbViDQChocmwoL8ptWc"
+      }
+    },
+    "slot": 400306759
+  },
+  {
+    "id": 7,
+    "signature": "4CkxNzazsMv16tVxghLvJAdbZwpLYmYvVcR7YVaHypyasX24GAPAShwvLSjr71vNNdBMXTwWeT3mPa5mWCtBp6Ki",
+    "event_index": 4,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "event_name": "FilledEvent",
+    "fields": {
+      "FilledEvent": {
+        "dca_key": "3nsTjVJTwwGvXqDRgqNCZAQKwt4QMVhHHqvyseCNR3YX",
+        "fee": 570099,
+        "fee_mint": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+        "in_amount": 21041666667,
+        "input_mint": "So11111111111111111111111111111111111111112",
+        "out_amount": 569529644,
+        "output_mint": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+        "user_key": "31o3cjq1yr2ssTrAvXHEGa5MUPbViDQChocmwoL8ptWc"
+      }
+    },
+    "slot": 400306759
+  },
+  {
+    "id": 8,
+    "signature": "4CkxNzazsMv16tVxghLvJAdbZwpLYmYvVcR7YVaHypyasX24GAPAShwvLSjr71vNNdBMXTwWeT3mPa5mWCtBp6Ki",
+    "event_index": 5,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "event_name": "WithdrawEvent",
+    "fields": {
+      "WithdrawEvent": {
+        "dca_key": "3nsTjVJTwwGvXqDRgqNCZAQKwt4QMVhHHqvyseCNR3YX",
+        "in_amount": 0,
+        "out_amount": 569529644,
+        "user_withdraw": false
+      }
+    },
+    "slot": 400306759
+  },
+  {
+    "id": 50,
+    "signature": "5LoYg3EaBeiFQHpfhZyWV8TaSG8cT3EN4yd4tan5NW1td6EeeezQXjXSx2mQ7HEaBBULkPbtb6qXRRSqTxq5TwsJ",
+    "event_index": 0,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "event_name": "OpenedEvent",
+    "fields": {
+      "OpenedEvent": {
+        "created_at": 1771111572,
+        "cycle_frequency": 60,
+        "dca_key": "8rpaWbajA8xmPNMZQGP5i2LQapHgbAxexzrrVds9wL2Y",
+        "in_amount_per_cycle": 403006662386,
+        "in_deposited": 2015033311928,
+        "input_mint": "6dKCoWjpj5MFU5gWDEFdpUUeBasBLK3wLEwhUzQPAa1e",
+        "output_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "user_key": "7XZdwc12n2PCk2rpkBjvqYt1q4rGSHCQWfkoNhYitNCQ"
+      }
+    },
+    "slot": 400306912
+  },
+  {
+    "id": 21,
+    "signature": "3PcYuytRPDJGxUUYj2z8Up2e2f4irgmzXRvAm8PnezVZfw7RcU9ZdsY3Ngav4ETfKomNV4SBiZjZ6QSvyRgeSTSY",
+    "event_index": 6,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "event_name": "ClosedEvent",
+    "fields": {
+      "ClosedEvent": {
+        "created_at": 1771111277,
+        "cycle_frequency": 60,
+        "dca_key": "5gadwswXkAacjtyPsPFGhfEtTdyxthUtvwRekfhUgYX",
+        "in_amount_per_cycle": 183086695,
+        "in_deposited": 915433478,
+        "input_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "output_mint": "E3oEF6TZb5DssCqwyXRt31AUEnGqvcHeVcyGvLiqpump",
+        "total_in_withdrawn": 0,
+        "total_out_withdrawn": 1279067332474,
+        "unfilled_amount": 0,
+        "user_closed": false,
+        "user_key": "F1sQKTHfoAE97FAwZ4ttWw2yJGERTRVFpXetREQ9oHY7"
+      }
+    },
+    "slot": 400306787
+  },
+  {
+    "id": 214,
+    "signature": "4vUF2XfZQXeEJ8AarEy19U2dZFhUGcPtJouih5FCPfdhhwq2F6TjAGTVGMRdFTYKHqN3tBTvRMk7FWhJxzuPtwDZ",
+    "event_index": 2,
+    "program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "inner_program_id": "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M",
+    "event_name": "ClosedEvent",
+    "fields": {
+      "ClosedEvent": {
+        "created_at": 1771104456,
+        "cycle_frequency": 300,
+        "dca_key": "6JYMvo5PQS6rM6xjTZfjvfNHGdtMMxCiQgpoJ7SsUUpQ",
+        "in_amount_per_cycle": 100000000,
+        "in_deposited": 4000000000,
+        "input_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "output_mint": "Ab98dbe7st4dNKHgtWsP27zJHrfLNi7Gmqvx4j42BAGS",
+        "total_in_withdrawn": 1400000000,
+        "total_out_withdrawn": 9737035287242015,
+        "unfilled_amount": 1400000000,
+        "user_closed": true,
+        "user_key": "GdSmhYHGFjb1QRDJ3dtpbA9TYNJaqEJsZHuUxpksEKNN"
+      }
+    },
+    "slot": 400308298
+  }
+]

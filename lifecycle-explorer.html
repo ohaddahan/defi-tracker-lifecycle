@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lifecycle State Machine Explorer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0f1117; --panel: #181a20; --border: #2a2d36;
+    --text: #e0e0e6; --dim: #6b7280; --accent: #3b82f6;
+    --green: #22c55e; --red: #ef4444; --amber: #f59e0b;
+    --purple: #a855f7; --cyan: #06b6d4; --pink: #ec4899;
+  }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  .top { display: flex; flex: 1; min-height: 0; }
+  .sidebar { width: 320px; min-width: 320px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .canvas-area { flex: 1; position: relative; display: flex; flex-direction: column; }
+  .svg-wrap { flex: 1; position: relative; overflow: hidden; }
+  .section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin-bottom: 10px; font-weight: 600; }
+  .preset-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+  .preset-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 12px; cursor: pointer; transition: all .15s; }
+  .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .preset-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .protocol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .proto-btn { padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 13px; cursor: pointer; text-align: left; transition: all .15s; }
+  .proto-btn:hover { border-color: var(--accent); }
+  .proto-btn.active { background: rgba(59,130,246,.15); border-color: var(--accent); }
+  .proto-btn .proto-label { font-weight: 600; display: block; }
+  .proto-btn .proto-sub { font-size: 10px; color: var(--dim); margin-top: 2px; display: block; }
+  .event-group { margin-top: 8px; }
+  .event-group-label { font-size: 11px; color: var(--dim); margin-bottom: 6px; font-weight: 500; }
+  .event-list { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+  .evt-btn { padding: 5px 10px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 12px; cursor: pointer; transition: all .15s; }
+  .evt-btn:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+  .evt-btn:disabled { opacity: .3; cursor: not-allowed; }
+  .evt-btn.blocked { border-color: var(--red); opacity: .5; }
+  .evt-btn .evt-type { font-size: 9px; color: var(--dim); display: block; margin-top: 1px; }
+  .log-area { flex: 1; overflow-y: auto; padding: 12px 16px; }
+  .log-entry { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; padding: 4px 0; border-bottom: 1px solid rgba(42,45,54,.5); display: flex; align-items: center; gap: 8px; }
+  .log-entry .log-step { color: var(--dim); min-width: 20px; text-align: right; }
+  .log-entry .log-arrow { color: var(--dim); }
+  .log-entry .log-transition { font-weight: 600; }
+  .log-entry .log-decision { font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+  .log-entry .log-decision.apply { background: rgba(34,197,94,.15); color: var(--green); }
+  .log-entry .log-decision.blocked { background: rgba(239,68,68,.15); color: var(--red); }
+  .state-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .state-none { background: rgba(107,114,128,.2); color: var(--dim); }
+  .state-active { background: rgba(59,130,246,.15); color: var(--accent); }
+  .state-completed { background: rgba(34,197,94,.15); color: var(--green); }
+  .state-cancelled { background: rgba(239,68,68,.15); color: var(--red); }
+  .state-expired { background: rgba(245,158,11,.15); color: var(--amber); }
+  .current-state-bar { padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  .current-state-bar .label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .reset-btn { margin-left: auto; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--dim); font-size: 11px; cursor: pointer; }
+  .reset-btn:hover { color: var(--red); border-color: var(--red); }
+  .prompt-bar { background: var(--panel); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: flex-start; gap: 12px; max-height: 140px; }
+  .prompt-text { flex: 1; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; color: var(--text); line-height: 1.5; overflow-y: auto; max-height: 110px; white-space: pre-wrap; }
+  .copy-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); font-size: 12px; cursor: pointer; white-space: nowrap; transition: all .15s; }
+  .copy-btn:hover { background: var(--accent); color: #fff; }
+  .copy-btn.copied { background: var(--green); border-color: var(--green); color: #fff; }
+  svg text { font-family: system-ui, -apple-system, sans-serif; }
+  .node-rect { rx: 12; ry: 12; stroke-width: 2; transition: all .3s; }
+  .node-rect.highlight { stroke-width: 3; filter: drop-shadow(0 0 12px var(--accent)); }
+  .node-label { fill: var(--text); font-size: 14px; font-weight: 600; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .node-sub { fill: var(--dim); font-size: 10px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .edge-path { fill: none; stroke-width: 2; }
+  .edge-label { font-size: 10px; text-anchor: middle; dominant-baseline: central; }
+  .legend-text { fill: var(--dim); font-size: 11px; }
+  .delta-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .delta-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .delta-input { width: 100px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: 'SF Mono', monospace; font-size: 13px; }
+  .delta-label { font-size: 12px; color: var(--dim); min-width: 90px; }
+  .delta-result { font-family: 'SF Mono', monospace; font-size: 13px; padding: 8px 12px; background: var(--bg); border-radius: 6px; border: 1px solid var(--border); }
+  @keyframes pulse-green { 0% { filter: drop-shadow(0 0 0px var(--green)); } 50% { filter: drop-shadow(0 0 16px var(--green)); } 100% { filter: drop-shadow(0 0 0px var(--green)); } }
+  @keyframes pulse-red { 0% { filter: drop-shadow(0 0 0px var(--red)); } 50% { filter: drop-shadow(0 0 16px var(--red)); } 100% { filter: drop-shadow(0 0 0px var(--red)); } }
+  .flash-green { animation: pulse-green .6s ease-out; }
+  .flash-red { animation: pulse-red .6s ease-out; }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="sidebar">
+    <div class="section">
+      <div class="section-title">Presets</div>
+      <div class="preset-bar" id="presets"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Protocol</div>
+      <div class="protocol-grid" id="protocols"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Fire Event</div>
+      <div id="event-buttons"></div>
+    </div>
+    <div class="delta-section">
+      <div class="section-title">Snapshot Delta Calculator</div>
+      <div class="delta-row">
+        <span class="delta-label">Stored total</span>
+        <input type="number" class="delta-input" id="stored-total" value="300">
+      </div>
+      <div class="delta-row">
+        <span class="delta-label">Snapshot total</span>
+        <input type="number" class="delta-input" id="snapshot-total" value="450">
+      </div>
+      <div class="delta-result" id="delta-result"></div>
+    </div>
+    <div class="section" style="flex:0 0 auto;">
+      <div class="section-title">Event Log</div>
+    </div>
+    <div class="log-area" id="log"></div>
+  </div>
+
+  <div class="canvas-area">
+    <div class="current-state-bar">
+      <span class="label">Current State</span>
+      <span class="state-badge state-none" id="current-state-badge">None (new order)</span>
+      <span class="label" style="margin-left:16px;">Fills</span>
+      <span style="font-family:monospace;font-size:14px;" id="fill-count">0</span>
+      <button class="reset-btn" onclick="resetState()">Reset</button>
+    </div>
+    <div class="svg-wrap">
+      <svg id="diagram" width="100%" height="100%" viewBox="0 0 800 500"></svg>
+    </div>
+  </div>
+</div>
+
+<div class="prompt-bar">
+  <div class="prompt-text" id="prompt-output">Select a protocol and fire events to explore the lifecycle state machine.</div>
+  <button class="copy-btn" id="copy-btn" onclick="copyPrompt()">Copy</button>
+</div>
+
+<script>
+// ── Protocol Data ──────────────────────────────────────────
+const PROTOCOLS = {
+  dca: {
+    label: 'Jupiter DCA', sub: 'Dollar-Cost Averaging',
+    programId: 'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M',
+    instructions: {
+      OpenDca: 'Created', OpenDcaV2: 'Created',
+      InitiateFlashFill: 'FillInitiated', InitiateDlmmFill: 'FillInitiated',
+      FulfillFlashFill: 'FillCompleted', FulfillDlmmFill: 'FillCompleted',
+      CloseDca: 'Closed', EndAndClose: 'Closed'
+    },
+    events: {
+      OpenedEvent: 'Created', FilledEvent: 'FillCompleted', ClosedEvent: 'Closed',
+      CollectedFeeEvent: 'FeeCollected', WithdrawEvent: 'Withdrawn', DepositEvent: 'Deposited'
+    },
+    closedVariants: ['Completed', 'Cancelled', 'Expired']
+  },
+  limitV1: {
+    label: 'Jupiter Limit V1', sub: 'Limit Orders V1',
+    programId: 'jupoNjAxXgZ4rjzxzPMP4oxduvQsQtZzyknqvzYNrNu',
+    instructions: {
+      InitializeOrder: 'Created', PreFlashFillOrder: 'FillInitiated',
+      FillOrder: 'FillCompleted', FlashFillOrder: 'FillCompleted',
+      CancelOrder: 'Cancelled', CancelExpiredOrder: 'Expired'
+    },
+    events: {
+      CreateOrderEvent: 'Created', CancelOrderEvent: 'Cancelled', TradeEvent: 'FillCompleted'
+    },
+    closedVariants: []
+  },
+  limitV2: {
+    label: 'Jupiter Limit V2', sub: 'Limit Orders V2',
+    programId: 'j1o2qRpjcyUwEvwtcfhEQefh773ZgjxcVRry7LDqg5X',
+    instructions: {
+      InitializeOrder: 'Created', PreFlashFillOrder: 'FillInitiated',
+      FlashFillOrder: 'FillCompleted', CancelOrder: 'Cancelled'
+    },
+    events: {
+      CreateOrderEvent: 'Created', CancelOrderEvent: 'Cancelled', TradeEvent: 'FillCompleted'
+    },
+    closedVariants: []
+  },
+  kamino: {
+    label: 'Kamino', sub: 'Kamino Limit Orders',
+    programId: 'LiMoM9rMhrdYrfzUCxQppvxCSG1FcrUK9G8uLq4A1GF',
+    instructions: {
+      CreateOrder: 'Created', TakeOrder: 'FillCompleted',
+      FlashTakeOrderStart: 'FillInitiated', FlashTakeOrderEnd: 'FillCompleted',
+      CloseOrderAndClaimTip: 'Closed'
+    },
+    events: {
+      OrderDisplayEvent: 'FillCompleted'
+    },
+    closedVariants: ['Completed', 'Cancelled', 'Expired']
+  }
+};
+
+const EVENT_TO_TRANSITION = {
+  Created: 'Create', FillInitiated: 'MetadataOnly', FillCompleted: 'FillDelta',
+  Cancelled: 'Close(Cancelled)', Expired: 'Close(Expired)', Closed: null,
+  FeeCollected: 'MetadataOnly', Withdrawn: 'MetadataOnly', Deposited: 'MetadataOnly'
+};
+
+const TERMINAL_STATUSES = ['completed', 'cancelled', 'expired'];
+
+const PRESETS = [
+  { name: 'Happy Path', protocol: 'dca', events: ['Created', 'FillCompleted', 'FillCompleted', 'Closed:Completed'] },
+  { name: 'User Cancel', protocol: 'limitV1', events: ['Created', 'FillCompleted', 'Cancelled'] },
+  { name: 'Expired Order', protocol: 'dca', events: ['Created', 'FillCompleted', 'Closed:Expired'] },
+  { name: 'Terminal Reject', protocol: 'limitV2', events: ['Created', 'FillCompleted', 'Cancelled', 'FillCompleted'] },
+  { name: 'Kamino Fill', protocol: 'kamino', events: ['Created', 'FillCompleted', 'FillCompleted', 'Closed:Completed'] },
+];
+
+// ── State ──────────────────────────────────────────────────
+const state = { protocol: 'dca', currentStatus: null, fills: 0, log: [] };
+
+// ── Lifecycle Engine (mirrors Rust) ────────────────────────
+function isTerminal(status) { return status !== null && TERMINAL_STATUSES.includes(status); }
+
+function decideTransition(currentStatus, transition) {
+  if (!isTerminal(currentStatus)) return 'Apply';
+  if (transition === 'MetadataOnly') return 'Apply';
+  return 'IgnoreTerminalViolation';
+}
+
+function transitionToString(eventType, closedStatus) {
+  if (eventType === 'Closed' && closedStatus) return 'Close(' + closedStatus + ')';
+  return EVENT_TO_TRANSITION[eventType] || 'MetadataOnly';
+}
+
+function transitionTarget(transition) {
+  if (transition.startsWith('Close(')) {
+    const m = transition.match(/Close\((\w+)\)/);
+    return m ? m[1].toLowerCase() : null;
+  }
+  if (transition === 'Create') return 'active';
+  return null;
+}
+
+// ── Fire Event ─────────────────────────────────────────────
+function fireEvent(eventType, closedStatus) {
+  const transition = transitionToString(eventType, closedStatus);
+  const decision = decideTransition(state.currentStatus, transition);
+  const from = state.currentStatus || 'none';
+  let to = from;
+
+  if (decision === 'Apply') {
+    const target = transitionTarget(transition);
+    if (target) {
+      state.currentStatus = target;
+      to = target;
+    } else {
+      if (state.currentStatus === null && transition !== 'MetadataOnly') {
+        state.currentStatus = 'active';
+        to = 'active';
+      } else {
+        to = state.currentStatus || 'none';
+      }
+    }
+    if (transition === 'FillDelta') state.fills++;
+  }
+
+  state.log.push({ step: state.log.length + 1, from: from, transition: transition, to: to, decision: decision, eventType: eventType, closedStatus: closedStatus || null });
+  updateAll();
+  animateTransition(decision, to);
+}
+
+// ── DOM Helpers ────────────────────────────────────────────
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text) e.textContent = text;
+  return e;
+}
+
+function svgEl(tag, attrs) {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+
+// ── Rendering ──────────────────────────────────────────────
+function updateAll() {
+  renderProtocols();
+  renderEventButtons();
+  renderDiagram();
+  renderLog();
+  renderCurrentState();
+  renderDelta();
+  updatePrompt();
+}
+
+function renderProtocols() {
+  const container = document.getElementById('protocols');
+  container.replaceChildren();
+  for (const [key, p] of Object.entries(PROTOCOLS)) {
+    const btn = el('button', 'proto-btn' + (state.protocol === key ? ' active' : ''));
+    const lbl = el('span', 'proto-label', p.label);
+    const sub = el('span', 'proto-sub', p.sub);
+    btn.appendChild(lbl);
+    btn.appendChild(sub);
+    btn.onclick = function() { state.protocol = key; updateAll(); };
+    container.appendChild(btn);
+  }
+}
+
+function renderEventButtons() {
+  const container = document.getElementById('event-buttons');
+  container.replaceChildren();
+  const proto = PROTOCOLS[state.protocol];
+
+  function makeGroup(title, entries, isClosed) {
+    const group = el('div', 'event-group');
+    group.appendChild(el('div', 'event-group-label', title));
+    const list = el('div', 'event-list');
+
+    for (const [name, type] of Object.entries(entries)) {
+      const btn = el('button', 'evt-btn');
+      const transition = EVENT_TO_TRANSITION[type] || 'MetadataOnly';
+      const wouldBlock = isTerminal(state.currentStatus) && transition !== 'MetadataOnly';
+      if (wouldBlock) btn.classList.add('blocked');
+      btn.appendChild(document.createTextNode(name));
+      const sub = el('span', 'evt-type', type + ' \u2192 ' + transition);
+      btn.appendChild(sub);
+      btn.onclick = function() {
+        if (type === 'Closed') return;
+        fireEvent(type, null);
+      };
+      list.appendChild(btn);
+    }
+    group.appendChild(list);
+    return group;
+  }
+
+  container.appendChild(makeGroup('Instructions', proto.instructions));
+  container.appendChild(makeGroup('Events', proto.events));
+
+  if (proto.closedVariants.length > 0) {
+    const group = el('div', 'event-group');
+    group.appendChild(el('div', 'event-group-label', 'Close Terminal Status'));
+    const list = el('div', 'event-list');
+    for (const variant of proto.closedVariants) {
+      const btn = el('button', 'evt-btn');
+      const transition = 'Close(' + variant + ')';
+      const wouldBlock = isTerminal(state.currentStatus);
+      if (wouldBlock) btn.classList.add('blocked');
+      btn.appendChild(document.createTextNode('Close: ' + variant));
+      const sub = el('span', 'evt-type', transition);
+      btn.appendChild(sub);
+      btn.onclick = function() { fireEvent('Closed', variant); };
+      list.appendChild(btn);
+    }
+    group.appendChild(list);
+    container.appendChild(group);
+  }
+}
+
+function renderCurrentState() {
+  const badge = document.getElementById('current-state-badge');
+  const s = state.currentStatus;
+  badge.className = 'state-badge state-' + (s || 'none');
+  badge.textContent = s ? s.charAt(0).toUpperCase() + s.slice(1) : 'None (new order)';
+  document.getElementById('fill-count').textContent = String(state.fills);
+}
+
+function renderLog() {
+  const container = document.getElementById('log');
+  container.replaceChildren();
+  for (const entry of [...state.log].reverse()) {
+    const row = el('div', 'log-entry');
+    row.appendChild(el('span', 'log-step', String(entry.step)));
+
+    const fromBadge = el('span', 'state-badge state-' + entry.from, entry.from);
+    row.appendChild(fromBadge);
+
+    row.appendChild(el('span', 'log-arrow', '\u2192'));
+    row.appendChild(el('span', 'log-transition', entry.transition));
+    row.appendChild(el('span', 'log-arrow', '\u2192'));
+
+    const toBadge = el('span', 'state-badge state-' + entry.to, entry.to);
+    row.appendChild(toBadge);
+
+    const decClass = entry.decision === 'Apply' ? 'apply' : 'blocked';
+    const decText = entry.decision === 'Apply' ? 'Applied' : 'Blocked';
+    row.appendChild(el('span', 'log-decision ' + decClass, decText));
+
+    container.appendChild(row);
+  }
+}
+
+// ── SVG State Diagram ──────────────────────────────────────
+const NODES = [
+  { id: 'none', label: 'None', sub: 'new order', x: 100, y: 250, w: 110, h: 50, color: '#374151', stroke: '#6b7280' },
+  { id: 'active', label: 'Active', sub: 'in progress', x: 310, y: 250, w: 120, h: 50, color: '#1e3a5f', stroke: '#3b82f6' },
+  { id: 'completed', label: 'Completed', sub: 'terminal', x: 570, y: 120, w: 140, h: 50, color: '#14532d', stroke: '#22c55e' },
+  { id: 'cancelled', label: 'Cancelled', sub: 'terminal', x: 570, y: 250, w: 140, h: 50, color: '#450a0a', stroke: '#ef4444' },
+  { id: 'expired', label: 'Expired', sub: 'terminal', x: 570, y: 380, w: 140, h: 50, color: '#451a03', stroke: '#f59e0b' },
+];
+
+const EDGES = [
+  { from: 'none', to: 'active', label: 'Create', color: '#3b82f6' },
+  { from: 'active', to: 'active', label: 'FillDelta', color: '#06b6d4', self: true, dy: -40 },
+  { from: 'active', to: 'active', label: 'MetadataOnly', color: '#6b7280', self: true, dy: 40 },
+  { from: 'active', to: 'completed', label: 'Close(Completed)', color: '#22c55e' },
+  { from: 'active', to: 'cancelled', label: 'Close(Cancelled)', color: '#ef4444' },
+  { from: 'active', to: 'expired', label: 'Close(Expired)', color: '#f59e0b' },
+  { from: 'completed', to: 'completed', label: 'MetadataOnly', color: '#6b7280', self: true, dy: -35 },
+  { from: 'cancelled', to: 'cancelled', label: 'MetadataOnly', color: '#6b7280', self: true, dy: -35 },
+  { from: 'expired', to: 'expired', label: 'MetadataOnly', color: '#6b7280', self: true, dy: -35 },
+];
+
+const ARROW_COLORS = { blue: '#3b82f6', green: '#22c55e', red: '#ef4444', amber: '#f59e0b', cyan: '#06b6d4', gray: '#6b7280' };
+
+function renderDiagram() {
+  const svg = document.getElementById('diagram');
+  svg.replaceChildren();
+
+  const defs = svgEl('defs');
+  for (const [name, color] of Object.entries(ARROW_COLORS)) {
+    const marker = svgEl('marker', { id: 'arrow-' + name, markerWidth: '8', markerHeight: '6', refX: '7', refY: '3', orient: 'auto' });
+    marker.appendChild(svgEl('polygon', { points: '0 0, 8 3, 0 6', fill: color }));
+    defs.appendChild(marker);
+  }
+  svg.appendChild(defs);
+
+  // Terminal zone border
+  svg.appendChild(svgEl('rect', { x: '540', y: '90', width: '200', height: '370', rx: '16', fill: 'none', stroke: '#2a2d36', 'stroke-width': '1', 'stroke-dasharray': '6 4' }));
+
+  // Draw edges
+  for (const edge of EDGES) {
+    const fromNode = NODES.find(function(n) { return n.id === edge.from; });
+    const toNode = NODES.find(function(n) { return n.id === edge.to; });
+    const markerName = Object.entries(ARROW_COLORS).find(function(e) { return e[1] === edge.color; });
+    const marker = markerName ? markerName[0] : 'gray';
+
+    if (edge.self) {
+      const cx = fromNode.x + fromNode.w / 2;
+      const cy = fromNode.y + (edge.dy < 0 ? 0 : fromNode.h);
+      const dy = edge.dy;
+      svg.appendChild(svgEl('path', {
+        d: 'M ' + (cx - 20) + ' ' + cy + ' C ' + (cx - 30) + ' ' + (cy + dy * 1.5) + ', ' + (cx + 30) + ' ' + (cy + dy * 1.5) + ', ' + (cx + 20) + ' ' + cy,
+        class: 'edge-path', stroke: edge.color, 'marker-end': 'url(#arrow-' + marker + ')'
+      }));
+      const lbl = svgEl('text', { x: String(cx), y: String(cy + dy * 1.3), class: 'edge-label', fill: edge.color });
+      lbl.textContent = edge.label;
+      svg.appendChild(lbl);
+    } else {
+      const x1 = fromNode.x + fromNode.w, y1 = fromNode.y + fromNode.h / 2;
+      const x2 = toNode.x, y2 = toNode.y + toNode.h / 2;
+      const mx = (x1 + x2) / 2;
+      svg.appendChild(svgEl('path', {
+        d: 'M ' + x1 + ' ' + y1 + ' C ' + mx + ' ' + y1 + ', ' + mx + ' ' + y2 + ', ' + x2 + ' ' + y2,
+        class: 'edge-path', stroke: edge.color, 'marker-end': 'url(#arrow-' + marker + ')',
+        id: 'edge-' + edge.from + '-' + edge.to
+      }));
+      const lbl = svgEl('text', { x: String(mx), y: String((y1 + y2) / 2 - 8), class: 'edge-label', fill: edge.color });
+      lbl.textContent = edge.label;
+      svg.appendChild(lbl);
+    }
+  }
+
+  // Draw nodes
+  for (const node of NODES) {
+    const g = svgEl('g');
+    const isCurrent = (state.currentStatus || 'none') === node.id;
+    const rect = svgEl('rect', {
+      x: String(node.x), y: String(node.y), width: String(node.w), height: String(node.h),
+      fill: node.color, stroke: node.stroke, class: 'node-rect' + (isCurrent ? ' highlight' : ''),
+      id: 'node-' + node.id
+    });
+    if (isCurrent) rect.setAttribute('stroke-width', '3');
+    g.appendChild(rect);
+
+    const lbl = svgEl('text', { x: String(node.x + node.w / 2), y: String(node.y + node.h / 2 - 6), class: 'node-label' });
+    lbl.textContent = node.label;
+    g.appendChild(lbl);
+
+    const sub = svgEl('text', { x: String(node.x + node.w / 2), y: String(node.y + node.h / 2 + 12), class: 'node-sub' });
+    sub.textContent = node.sub;
+    g.appendChild(sub);
+
+    svg.appendChild(g);
+  }
+
+  // Legend
+  const legend = svgEl('text', { x: '640', y: '460', class: 'legend-text', 'text-anchor': 'middle' });
+  legend.textContent = 'Terminal states only accept MetadataOnly';
+  svg.appendChild(legend);
+}
+
+function animateTransition(decision, targetState) {
+  const nodeEl = document.getElementById('node-' + targetState);
+  if (!nodeEl) return;
+  const cls = decision === 'Apply' ? 'flash-green' : 'flash-red';
+  nodeEl.classList.add(cls);
+  setTimeout(function() { nodeEl.classList.remove(cls); }, 600);
+}
+
+// ── Snapshot Delta ─────────────────────────────────────────
+function renderDelta() {
+  const stored = parseInt(document.getElementById('stored-total').value) || 0;
+  const snapshot = parseInt(document.getElementById('snapshot-total').value) || 0;
+  const delta = Math.max(0, snapshot - stored);
+  const regression = snapshot < stored;
+
+  const container = document.getElementById('delta-result');
+  container.replaceChildren();
+  container.appendChild(document.createTextNode('delta: '));
+  const valSpan = el('span', null, String(delta));
+  valSpan.style.color = 'var(--green)';
+  container.appendChild(valSpan);
+  container.appendChild(document.createTextNode(' \u00B7 regression: '));
+  const regSpan = el('span', null, String(regression));
+  regSpan.style.color = regression ? 'var(--red)' : 'var(--green)';
+  container.appendChild(regSpan);
+}
+
+document.getElementById('stored-total').addEventListener('input', renderDelta);
+document.getElementById('snapshot-total').addEventListener('input', renderDelta);
+
+// ── Presets ────────────────────────────────────────────────
+function renderPresets() {
+  const container = document.getElementById('presets');
+  container.replaceChildren();
+  for (const preset of PRESETS) {
+    const btn = el('button', 'preset-btn', preset.name);
+    btn.onclick = function() { runPreset(preset); };
+    container.appendChild(btn);
+  }
+}
+
+async function runPreset(preset) {
+  resetState();
+  state.protocol = preset.protocol;
+  updateAll();
+  for (const ev of preset.events) {
+    await new Promise(function(r) { setTimeout(r, 400); });
+    if (ev.includes(':')) {
+      const parts = ev.split(':');
+      fireEvent(parts[0], parts[1]);
+    } else {
+      fireEvent(ev, null);
+    }
+  }
+}
+
+// ── Prompt Output ──────────────────────────────────────────
+function updatePrompt() {
+  const output = document.getElementById('prompt-output');
+  if (state.log.length === 0) {
+    output.textContent = 'Select a protocol and fire events to explore the lifecycle state machine.';
+    return;
+  }
+
+  const proto = PROTOCOLS[state.protocol];
+  const parts = ['Protocol: ' + proto.label];
+  const status = state.currentStatus || 'none';
+  parts.push('Current state: ' + status);
+
+  if (state.fills > 0) parts.push(state.fills + ' fill(s) applied');
+
+  const blocked = state.log.filter(function(e) { return e.decision !== 'Apply'; });
+  if (blocked.length > 0) {
+    parts.push(blocked.length + ' transition(s) blocked by terminal state');
+  }
+
+  const transitions = state.log.map(function(e) { return e.transition; }).join(' \u2192 ');
+  parts.push('\nTransition sequence: ' + transitions);
+
+  if (isTerminal(state.currentStatus)) {
+    parts.push('\nOrder is terminal (' + state.currentStatus + '). Only MetadataOnly transitions are allowed. Create, FillDelta, and Close will be rejected with IgnoreTerminalViolation.');
+  }
+
+  output.textContent = parts.join('\n');
+}
+
+function copyPrompt() {
+  const text = document.getElementById('prompt-output').textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+// ── Reset ──────────────────────────────────────────────────
+function resetState() {
+  state.currentStatus = null;
+  state.fills = 0;
+  state.log = [];
+  updateAll();
+}
+
+// ── Init ───────────────────────────────────────────────────
+renderPresets();
+updateAll();
+</script>
+</body>
+</html>
