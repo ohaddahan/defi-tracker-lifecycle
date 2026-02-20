@@ -9,21 +9,13 @@ use crate::types::{RawInstruction, ResolveContext};
 
 #[derive(serde::Deserialize)]
 #[cfg_attr(test, derive(strum_macros::VariantNames))]
-#[expect(
-    dead_code,
-    reason = "variant data consumed by serde, not read directly"
-)]
-pub(crate) enum KaminoEventEnvelope {
+pub enum KaminoEventEnvelope {
     OrderDisplayEvent(OrderDisplayEventFields),
     UserSwapBalancesEvent(serde_json::Value),
 }
 
 #[derive(serde::Deserialize)]
-#[expect(
-    dead_code,
-    reason = "variant data consumed by serde, not read directly"
-)]
-pub(crate) enum KaminoInstructionKind {
+pub enum KaminoInstructionKind {
     CreateOrder(serde_json::Value),
     TakeOrder(serde_json::Value),
     FlashTakeOrderStart(serde_json::Value),
@@ -237,13 +229,12 @@ pub fn parse_display_status(status: i64) -> Result<KaminoDisplayStatus, Error> {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct OrderDisplayEventFields {
+pub struct OrderDisplayEventFields {
     #[serde(default)]
     pub remaining_input_amount: u64,
     #[serde(default)]
     pub filled_output_amount: u64,
     #[serde(default)]
-    #[expect(dead_code, reason = "consumed by serde for completeness")]
     pub number_of_fills: u64,
     #[serde(default)]
     pub status: u8,

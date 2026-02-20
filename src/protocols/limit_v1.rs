@@ -7,22 +7,14 @@ use crate::types::RawInstruction;
 
 #[derive(serde::Deserialize)]
 #[cfg_attr(test, derive(strum_macros::VariantNames))]
-#[expect(
-    clippy::enum_variant_names,
-    reason = "variant names mirror Carbon decoder crate"
-)]
-pub(crate) enum LimitV1EventEnvelope {
+pub enum LimitV1EventEnvelope {
     CreateOrderEvent(OrderKeyHolder),
     CancelOrderEvent(OrderKeyHolder),
     TradeEvent(TradeEventFields),
 }
 
 #[derive(serde::Deserialize)]
-#[expect(
-    dead_code,
-    reason = "variant data consumed by serde, not read directly"
-)]
-pub(crate) enum LimitV1InstructionKind {
+pub enum LimitV1InstructionKind {
     InitializeOrder(serde_json::Value),
     PreFlashFillOrder(serde_json::Value),
     FillOrder(serde_json::Value),
@@ -177,12 +169,12 @@ pub fn extract_create_mints(accounts: &[AccountInfo]) -> Result<LimitV1CreateMin
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct OrderKeyHolder {
+pub struct OrderKeyHolder {
     order_key: String,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct TradeEventFields {
+pub struct TradeEventFields {
     order_key: String,
     #[serde(default = "default_unknown")]
     taker: String,

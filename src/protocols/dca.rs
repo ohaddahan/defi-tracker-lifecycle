@@ -7,11 +7,7 @@ use crate::types::RawInstruction;
 
 #[derive(serde::Deserialize)]
 #[cfg_attr(test, derive(strum_macros::VariantNames))]
-#[expect(
-    clippy::enum_variant_names,
-    reason = "variant names mirror Carbon decoder crate"
-)]
-pub(crate) enum DcaEventEnvelope {
+pub enum DcaEventEnvelope {
     OpenedEvent(DcaKeyHolder),
     FilledEvent(FilledEventFields),
     ClosedEvent(ClosedEventFields),
@@ -21,11 +17,7 @@ pub(crate) enum DcaEventEnvelope {
 }
 
 #[derive(serde::Deserialize)]
-#[expect(
-    dead_code,
-    reason = "variant data consumed by serde, not read directly"
-)]
-pub(crate) enum DcaInstructionKind {
+pub enum DcaInstructionKind {
     OpenDca(serde_json::Value),
     OpenDcaV2(serde_json::Value),
     InitiateFlashFill(serde_json::Value),
@@ -231,21 +223,21 @@ pub fn extract_create_mints(
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct FilledEventFields {
+pub struct FilledEventFields {
     dca_key: String,
     in_amount: u64,
     out_amount: u64,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct ClosedEventFields {
+pub struct ClosedEventFields {
     dca_key: String,
     user_closed: bool,
     unfilled_amount: u64,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct DcaKeyHolder {
+pub struct DcaKeyHolder {
     dca_key: String,
 }
 
