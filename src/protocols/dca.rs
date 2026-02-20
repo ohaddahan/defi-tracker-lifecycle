@@ -137,13 +137,25 @@ pub fn extract_order_pda(
         return Ok(acc.pubkey.clone());
     }
 
-    let idx = match instruction_name {
-        "OpenDca" | "OpenDcaV2" => 0,
-        "InitiateFlashFill" | "FulfillFlashFill" | "InitiateDlmmFill" | "FulfillDlmmFill" => 1,
-        "CloseDca" | "EndAndClose" => 1,
-        _ => {
+    let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
+    let kind: DcaInstructionKind =
+        serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
+            reason: format!("unknown DCA instruction: {instruction_name}"),
+        })?;
+
+    let idx = match kind {
+        DcaInstructionKind::OpenDca(_) | DcaInstructionKind::OpenDcaV2(_) => 0,
+        DcaInstructionKind::InitiateFlashFill(_)
+        | DcaInstructionKind::FulfillFlashFill(_)
+        | DcaInstructionKind::InitiateDlmmFill(_)
+        | DcaInstructionKind::FulfillDlmmFill(_) => 1,
+        DcaInstructionKind::CloseDca(_) | DcaInstructionKind::EndAndClose(_) => 1,
+        DcaInstructionKind::Transfer(_)
+        | DcaInstructionKind::Deposit(_)
+        | DcaInstructionKind::Withdraw(_)
+        | DcaInstructionKind::WithdrawFees(_) => {
             return Err(Error::Protocol {
-                reason: format!("unknown DCA instruction: {instruction_name}"),
+                reason: format!("DCA instruction {instruction_name} has no order PDA"),
             });
         }
     };
@@ -184,9 +196,15 @@ pub fn extract_create_mints(
         });
     }
 
-    let (input_idx, output_idx) = match instruction_name {
-        "OpenDca" => (2, 3),
-        "OpenDcaV2" => (3, 4),
+    let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
+    let kind: DcaInstructionKind =
+        serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
+            reason: format!("unknown DCA instruction: {instruction_name}"),
+        })?;
+
+    let (input_idx, output_idx) = match kind {
+        DcaInstructionKind::OpenDca(_) => (2, 3),
+        DcaInstructionKind::OpenDcaV2(_) => (3, 4),
         _ => {
             return Err(Error::Protocol {
                 reason: format!("not a DCA create instruction: {instruction_name}"),

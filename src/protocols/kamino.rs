@@ -121,14 +121,26 @@ pub fn extract_order_pda(
         return Ok(acc.pubkey.clone());
     }
 
-    let idx = match instruction_name {
-        "CreateOrder" => 3,
-        "TakeOrder" => 4,
-        "FlashTakeOrderStart" | "FlashTakeOrderEnd" => 4,
-        "CloseOrderAndClaimTip" => 1,
-        _ => {
+    let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
+    let kind: KaminoInstructionKind =
+        serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
+            reason: format!("unknown Kamino instruction: {instruction_name}"),
+        })?;
+
+    let idx = match kind {
+        KaminoInstructionKind::CreateOrder(_) => 3,
+        KaminoInstructionKind::TakeOrder(_) => 4,
+        KaminoInstructionKind::FlashTakeOrderStart(_)
+        | KaminoInstructionKind::FlashTakeOrderEnd(_) => 4,
+        KaminoInstructionKind::CloseOrderAndClaimTip(_) => 1,
+        KaminoInstructionKind::InitializeGlobalConfig(_)
+        | KaminoInstructionKind::InitializeVault(_)
+        | KaminoInstructionKind::UpdateGlobalConfig(_)
+        | KaminoInstructionKind::UpdateGlobalConfigAdmin(_)
+        | KaminoInstructionKind::WithdrawHostTip(_)
+        | KaminoInstructionKind::LogUserSwapBalances(_) => {
             return Err(Error::Protocol {
-                reason: format!("unknown Kamino instruction: {instruction_name}"),
+                reason: format!("Kamino instruction {instruction_name} has no order PDA"),
             });
         }
     };

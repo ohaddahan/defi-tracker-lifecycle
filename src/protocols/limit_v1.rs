@@ -106,13 +106,23 @@ pub fn extract_order_pda(
         return Ok(acc.pubkey.clone());
     }
 
-    let idx = match instruction_name {
-        "InitializeOrder" => 2,
-        "FillOrder" | "PreFlashFillOrder" | "FlashFillOrder" => 0,
-        "CancelOrder" | "CancelExpiredOrder" => 0,
-        _ => {
+    let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
+    let kind: LimitV1InstructionKind =
+        serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
+            reason: format!("unknown Limit v1 instruction: {instruction_name}"),
+        })?;
+
+    let idx = match kind {
+        LimitV1InstructionKind::InitializeOrder(_) => 2,
+        LimitV1InstructionKind::FillOrder(_)
+        | LimitV1InstructionKind::PreFlashFillOrder(_)
+        | LimitV1InstructionKind::FlashFillOrder(_) => 0,
+        LimitV1InstructionKind::CancelOrder(_) | LimitV1InstructionKind::CancelExpiredOrder(_) => 0,
+        LimitV1InstructionKind::WithdrawFee(_)
+        | LimitV1InstructionKind::InitFee(_)
+        | LimitV1InstructionKind::UpdateFee(_) => {
             return Err(Error::Protocol {
-                reason: format!("unknown Limit v1 instruction: {instruction_name}"),
+                reason: format!("Limit v1 instruction {instruction_name} has no order PDA"),
             });
         }
     };
