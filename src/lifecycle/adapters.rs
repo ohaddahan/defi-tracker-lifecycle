@@ -49,11 +49,6 @@ pub trait ProtocolAdapter: Sync {
     ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>>;
 }
 
-static DCA_ADAPTER: DcaAdapter = DcaAdapter;
-static LIMIT_V1_ADAPTER: LimitV1Adapter = LimitV1Adapter;
-static LIMIT_V2_ADAPTER: LimitV2Adapter = LimitV2Adapter;
-static KAMINO_ADAPTER: KaminoAdapter = KaminoAdapter;
-
 pub fn dca_closed_terminal_status(closed: &protocols::dca::DcaClosedEvent) -> TerminalStatus {
     if closed.user_closed {
         TerminalStatus::Cancelled
@@ -76,10 +71,10 @@ pub fn kamino_display_terminal_status(status_code: i64) -> Result<Option<Termina
 
 pub fn adapter_for(protocol: Protocol) -> &'static dyn ProtocolAdapter {
     match protocol {
-        Protocol::Dca => &DCA_ADAPTER,
-        Protocol::LimitV1 => &LIMIT_V1_ADAPTER,
-        Protocol::LimitV2 => &LIMIT_V2_ADAPTER,
-        Protocol::Kamino => &KAMINO_ADAPTER,
+        Protocol::Dca => &DcaAdapter,
+        Protocol::LimitV1 => &LimitV1Adapter,
+        Protocol::LimitV2 => &LimitV2Adapter,
+        Protocol::Kamino => &KaminoAdapter,
     }
 }
 
