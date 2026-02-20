@@ -41,7 +41,7 @@ tests/
 
 **Runtime guardrails (mirror enum alignment tests)**: Each protocol has a `mirror_enums_cover_all_carbon_variants` test that constructs `{"VariantName": <minimal_payload>}` JSON for every Carbon variant and asserts the mirror enum (`*InstructionKind`, `*EventEnvelope`) deserializes it. This bridges the compile-time `classify_decoded()` guard with the runtime serde dispatch — if someone adds a Carbon variant to `classify_decoded()` but forgets the mirror enum, this test catches it.
 
-**Runtime guardrails (known-name alignment tests)**: Each protocol also has `known_event_names_match_event_envelope_variants`, asserting `KNOWN_EVENT_NAMES` exactly matches `*EventEnvelope` variant names (via `strum::VariantNames`). This prevents regressions where malformed payloads for newly added known variants are accidentally treated as unknown (`None`).
+**Known-variant detection from strum**: Event envelopes derive `strum_macros::VariantNames`, providing `VARIANTS` at runtime. The `contains_known_variant()` helper uses `*EventEnvelope::VARIANTS` directly — no manually maintained `KNOWN_EVENT_NAMES` arrays. Correct by construction.
 
 **EventType reachability test**: `event_type_reachability_all_variants_covered` in `protocols/mod.rs` runs all instruction+event variant names through classify/resolve across all protocols, collects produced `EventType` values, and asserts all 9 variants are hit. Catches dead/unreachable variants.
 
@@ -67,7 +67,7 @@ tests/
 ## Commands
 
 ```bash
-cargo test                  # 141 tests (114 unit + 27 integration)
+cargo test                  # 137 tests (110 unit + 27 integration)
 cargo clippy                # pedantic + deny(unwrap_used, expect_used, panic, ...)
 cargo fmt                   # format
 cargo llvm-cov              # coverage
@@ -86,6 +86,8 @@ Layer 3: EventType reach    event_type_reachability_all_variants_covered()
 Layer 4: Unit tests         per-protocol classify/resolve tests with inline JSON
 Layer 5: Fixture tests      adapter_fixtures.rs with real JSON from defi-tracker
 Layer 6: Lifecycle E2E      lifecycle_* tests: raw JSON → adapter → state machine → status
+
+Known-variant detection uses strum::VariantNames on event envelopes — no manual string arrays.
 ```
 
 ## Gotchas

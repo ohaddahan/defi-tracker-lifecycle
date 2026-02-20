@@ -4,9 +4,9 @@ use crate::protocols::{
     AccountInfo, EventType, checked_u64_to_i64, contains_known_variant, find_account_by_name,
 };
 use crate::types::RawInstruction;
+use strum::VariantNames;
 
-#[derive(serde::Deserialize)]
-#[cfg_attr(test, derive(strum_macros::VariantNames))]
+#[derive(serde::Deserialize, strum_macros::VariantNames)]
 pub enum DcaEventEnvelope {
     OpenedEvent(DcaKeyHolder),
     FilledEvent(FilledEventFields),
@@ -31,15 +31,6 @@ pub enum DcaInstructionKind {
     Withdraw(serde_json::Value),
     WithdrawFees(serde_json::Value),
 }
-
-const KNOWN_EVENT_NAMES: &[&str] = &[
-    "OpenedEvent",
-    "FilledEvent",
-    "ClosedEvent",
-    "CollectedFeeEvent",
-    "WithdrawEvent",
-    "DepositEvent",
-];
 
 pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
     let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
@@ -70,7 +61,7 @@ pub fn resolve_event_envelope(
     let envelope: DcaEventEnvelope = match serde_json::from_value(fields.clone()) {
         Ok(e) => e,
         Err(err) => {
-            if !contains_known_variant(fields, KNOWN_EVENT_NAMES) {
+            if !contains_known_variant(fields, DcaEventEnvelope::VARIANTS) {
                 return None;
             }
             return Some(Err(Error::Protocol {
@@ -695,16 +686,5 @@ mod tests {
             "ClosedEvent": { "dca_key": "t", "user_closed": false, "unfilled_amount": 0_u64 }
         });
         assert!(serde_json::from_value::<DcaEventEnvelope>(closed).is_ok());
-    }
-
-    #[test]
-    fn known_event_names_match_event_envelope_variants() {
-        let mut known = KNOWN_EVENT_NAMES.to_vec();
-        known.sort_unstable();
-
-        let mut variants = <DcaEventEnvelope as strum::VariantNames>::VARIANTS.to_vec();
-        variants.sort_unstable();
-
-        assert_eq!(known, variants);
     }
 }

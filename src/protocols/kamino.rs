@@ -6,9 +6,9 @@ use crate::protocols::{
     AccountInfo, EventType, checked_u64_to_i64, contains_known_variant, find_account_by_name,
 };
 use crate::types::{RawInstruction, ResolveContext};
+use strum::VariantNames;
 
-#[derive(serde::Deserialize)]
-#[cfg_attr(test, derive(strum_macros::VariantNames))]
+#[derive(serde::Deserialize, strum_macros::VariantNames)]
 pub enum KaminoEventEnvelope {
     OrderDisplayEvent(OrderDisplayEventFields),
     UserSwapBalancesEvent(serde_json::Value),
@@ -28,8 +28,6 @@ pub enum KaminoInstructionKind {
     WithdrawHostTip(serde_json::Value),
     LogUserSwapBalances(serde_json::Value),
 }
-
-const KNOWN_EVENT_NAMES: &[&str] = &["OrderDisplayEvent", "UserSwapBalancesEvent"];
 
 pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
     let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
@@ -57,7 +55,7 @@ pub fn resolve_event_envelope(
     let envelope: KaminoEventEnvelope = match serde_json::from_value(fields.clone()) {
         Ok(e) => e,
         Err(err) => {
-            if !contains_known_variant(fields, KNOWN_EVENT_NAMES) {
+            if !contains_known_variant(fields, KaminoEventEnvelope::VARIANTS) {
                 return None;
             }
             return Some(Err(Error::Protocol {
@@ -710,16 +708,5 @@ mod tests {
                 "KaminoEventEnvelope missing variant: {name}"
             );
         }
-    }
-
-    #[test]
-    fn known_event_names_match_event_envelope_variants() {
-        let mut known = KNOWN_EVENT_NAMES.to_vec();
-        known.sort_unstable();
-
-        let mut variants = <KaminoEventEnvelope as strum::VariantNames>::VARIANTS.to_vec();
-        variants.sort_unstable();
-
-        assert_eq!(known, variants);
     }
 }

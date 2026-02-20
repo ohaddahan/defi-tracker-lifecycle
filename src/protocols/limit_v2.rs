@@ -5,9 +5,9 @@ use crate::protocols::{
     find_account_by_name,
 };
 use crate::types::RawInstruction;
+use strum::VariantNames;
 
-#[derive(serde::Deserialize)]
-#[cfg_attr(test, derive(strum_macros::VariantNames))]
+#[derive(serde::Deserialize, strum_macros::VariantNames)]
 pub enum LimitV2EventEnvelope {
     CreateOrderEvent(OrderKeyHolder),
     CancelOrderEvent(OrderKeyHolder),
@@ -23,8 +23,6 @@ pub enum LimitV2InstructionKind {
     UpdateFee(serde_json::Value),
     WithdrawFee(serde_json::Value),
 }
-
-const KNOWN_EVENT_NAMES: &[&str] = &["CreateOrderEvent", "CancelOrderEvent", "TradeEvent"];
 
 pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
     let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
@@ -44,7 +42,7 @@ pub fn resolve_event_envelope(
     let envelope: LimitV2EventEnvelope = match serde_json::from_value(fields.clone()) {
         Ok(e) => e,
         Err(err) => {
-            if !contains_known_variant(fields, KNOWN_EVENT_NAMES) {
+            if !contains_known_variant(fields, LimitV2EventEnvelope::VARIANTS) {
                 return None;
             }
             return Some(Err(Error::Protocol {
@@ -597,16 +595,5 @@ mod tests {
                 "remaining_making_amount": 0_u64, "remaining_taking_amount": 0_u64 }
         });
         assert!(serde_json::from_value::<LimitV2EventEnvelope>(trade).is_ok());
-    }
-
-    #[test]
-    fn known_event_names_match_event_envelope_variants() {
-        let mut known = KNOWN_EVENT_NAMES.to_vec();
-        known.sort_unstable();
-
-        let mut variants = <LimitV2EventEnvelope as strum::VariantNames>::VARIANTS.to_vec();
-        variants.sort_unstable();
-
-        assert_eq!(known, variants);
     }
 }
