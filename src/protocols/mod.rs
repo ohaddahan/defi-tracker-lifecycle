@@ -8,7 +8,10 @@ use solana_pubkey::Pubkey;
 
 use crate::error::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, strum_macros::Display, strum_macros::AsRefStr,
+)]
+#[strum(serialize_all = "snake_case")]
 pub enum Protocol {
     Dca,
     LimitV1,
@@ -28,15 +31,6 @@ impl Protocol {
         }
     }
 
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Dca => "dca",
-            Self::LimitV1 => "limit_v1",
-            Self::LimitV2 => "limit_v2",
-            Self::Kamino => "kamino",
-        }
-    }
-
     pub fn all_program_ids() -> [Pubkey; 4] {
         [
             carbon_jupiter_dca_decoder::PROGRAM_ID,
@@ -47,7 +41,8 @@ impl Protocol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, strum_macros::Display, strum_macros::AsRefStr)]
+#[strum(serialize_all = "snake_case")]
 pub enum EventType {
     Created,
     FillInitiated,
@@ -58,22 +53,6 @@ pub enum EventType {
     FeeCollected,
     Withdrawn,
     Deposited,
-}
-
-impl EventType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Created => "created",
-            Self::FillInitiated => "fill_initiated",
-            Self::FillCompleted => "fill_completed",
-            Self::Cancelled => "cancelled",
-            Self::Expired => "expired",
-            Self::Closed => "closed",
-            Self::FeeCollected => "fee_collected",
-            Self::Withdrawn => "withdrawn",
-            Self::Deposited => "deposited",
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -185,7 +164,7 @@ mod tests {
                 Protocol::from_program_id(&program_id.to_string()),
                 Some(expected_protocol)
             );
-            assert_eq!(expected_protocol.as_str(), expected_name);
+            assert_eq!(expected_protocol.as_ref(), expected_name);
         }
 
         assert_eq!(Protocol::from_program_id("unknown_program"), None);
@@ -215,7 +194,7 @@ mod tests {
             (EventType::Deposited, "deposited"),
         ];
         for (event_type, expected_label) in cases {
-            assert_eq!(event_type.as_str(), expected_label);
+            assert_eq!(event_type.as_ref(), expected_label);
         }
     }
 
@@ -304,7 +283,7 @@ mod tests {
         instruction_names
             .iter()
             .filter_map(|name| classify(&make_ix(name)))
-            .map(|et| et.as_str().to_string())
+            .map(|et| et.as_ref().to_string())
             .collect()
     }
 
@@ -312,7 +291,7 @@ mod tests {
         json: serde_json::Value,
         resolve: &dyn Fn(&serde_json::Value) -> Option<EventType>,
     ) -> Option<String> {
-        resolve(&json).map(|et| et.as_str().to_string())
+        resolve(&json).map(|et| et.as_ref().to_string())
     }
 
     #[test]
