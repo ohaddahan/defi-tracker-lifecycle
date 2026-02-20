@@ -4,13 +4,9 @@ pub mod limit_v1;
 pub mod limit_v2;
 
 use serde::Serialize;
+use solana_pubkey::Pubkey;
 
 use crate::error::Error;
-
-pub const JUPITER_DCA_PROGRAM_ID: &str = "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M";
-pub const JUPITER_LIMIT_ORDER_PROGRAM_ID: &str = "jupoNjAxXgZ4rjzxzPMP4oxduvQsQtZzyknqvzYNrNu";
-pub const JUPITER_LIMIT_ORDER_2_PROGRAM_ID: &str = "j1o2qRpjcyUwEvwtcfhEQefh773ZgjxcVRry7LDqg5X";
-pub const KAMINO_LIMIT_ORDER_PROGRAM_ID: &str = "LiMoM9rMhrdYrfzUCxQppvxCSG1FcrUK9G8uLq4A1GF";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Protocol {
@@ -22,11 +18,12 @@ pub enum Protocol {
 
 impl Protocol {
     pub fn from_program_id(program_id: &str) -> Option<Self> {
-        match program_id {
-            JUPITER_DCA_PROGRAM_ID => Some(Self::Dca),
-            JUPITER_LIMIT_ORDER_PROGRAM_ID => Some(Self::LimitV1),
-            JUPITER_LIMIT_ORDER_2_PROGRAM_ID => Some(Self::LimitV2),
-            KAMINO_LIMIT_ORDER_PROGRAM_ID => Some(Self::Kamino),
+        let key: Pubkey = program_id.parse().ok()?;
+        match key {
+            carbon_jupiter_dca_decoder::PROGRAM_ID => Some(Self::Dca),
+            carbon_jupiter_limit_order_decoder::PROGRAM_ID => Some(Self::LimitV1),
+            carbon_jupiter_limit_order_2_decoder::PROGRAM_ID => Some(Self::LimitV2),
+            carbon_kamino_limit_order_decoder::PROGRAM_ID => Some(Self::Kamino),
             _ => None,
         }
     }
@@ -40,12 +37,12 @@ impl Protocol {
         }
     }
 
-    pub fn all_program_ids() -> &'static [&'static str] {
-        &[
-            JUPITER_DCA_PROGRAM_ID,
-            JUPITER_LIMIT_ORDER_PROGRAM_ID,
-            JUPITER_LIMIT_ORDER_2_PROGRAM_ID,
-            KAMINO_LIMIT_ORDER_PROGRAM_ID,
+    pub fn all_program_ids() -> [Pubkey; 4] {
+        [
+            carbon_jupiter_dca_decoder::PROGRAM_ID,
+            carbon_jupiter_limit_order_decoder::PROGRAM_ID,
+            carbon_jupiter_limit_order_2_decoder::PROGRAM_ID,
+            carbon_kamino_limit_order_decoder::PROGRAM_ID,
         ]
     }
 }
@@ -134,19 +131,19 @@ pub fn find_account_by_name<'a>(
     accounts.iter().find(|a| a.name.as_deref() == Some(name))
 }
 
-pub(crate) fn contains_known_variant(fields: &serde_json::Value, known_names: &[&str]) -> bool {
+pub fn contains_known_variant(fields: &serde_json::Value, known_names: &[&str]) -> bool {
     fields
         .as_object()
         .is_some_and(|obj| obj.keys().any(|name| known_names.contains(&name.as_str())))
 }
 
-pub(crate) fn checked_u64_to_i64(value: u64, field: &str) -> Result<i64, Error> {
+pub fn checked_u64_to_i64(value: u64, field: &str) -> Result<i64, Error> {
     i64::try_from(value).map_err(|_| Error::Protocol {
         reason: format!("{field} exceeds i64::MAX: {value}"),
     })
 }
 
-pub(crate) fn checked_u16_to_i16(value: u16, field: &str) -> Result<i16, Error> {
+pub fn checked_u16_to_i16(value: u16, field: &str) -> Result<i16, Error> {
     i16::try_from(value).map_err(|_| Error::Protocol {
         reason: format!("{field} exceeds i16::MAX: {value}"),
     })
@@ -160,57 +157,46 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn program_ids_match_carbon_constants() {
-        assert_eq!(
-            JUPITER_DCA_PROGRAM_ID,
-            carbon_jupiter_dca_decoder::PROGRAM_ID.to_string()
-        );
-        assert_eq!(
-            JUPITER_LIMIT_ORDER_PROGRAM_ID,
-            carbon_jupiter_limit_order_decoder::PROGRAM_ID.to_string()
-        );
-        assert_eq!(
-            JUPITER_LIMIT_ORDER_2_PROGRAM_ID,
-            carbon_jupiter_limit_order_2_decoder::PROGRAM_ID.to_string()
-        );
-        assert_eq!(
-            KAMINO_LIMIT_ORDER_PROGRAM_ID,
-            carbon_kamino_limit_order_decoder::PROGRAM_ID.to_string()
-        );
-    }
-
-    #[test]
     fn protocol_program_id_mapping_and_string_names_are_stable() {
         let cases = [
-            (JUPITER_DCA_PROGRAM_ID, Protocol::Dca, "dca"),
             (
-                JUPITER_LIMIT_ORDER_PROGRAM_ID,
+                &carbon_jupiter_dca_decoder::PROGRAM_ID,
+                Protocol::Dca,
+                "dca",
+            ),
+            (
+                &carbon_jupiter_limit_order_decoder::PROGRAM_ID,
                 Protocol::LimitV1,
                 "limit_v1",
             ),
             (
-                JUPITER_LIMIT_ORDER_2_PROGRAM_ID,
+                &carbon_jupiter_limit_order_2_decoder::PROGRAM_ID,
                 Protocol::LimitV2,
                 "limit_v2",
             ),
-            (KAMINO_LIMIT_ORDER_PROGRAM_ID, Protocol::Kamino, "kamino"),
+            (
+                &carbon_kamino_limit_order_decoder::PROGRAM_ID,
+                Protocol::Kamino,
+                "kamino",
+            ),
         ];
         for (program_id, expected_protocol, expected_name) in cases {
             assert_eq!(
-                Protocol::from_program_id(program_id),
+                Protocol::from_program_id(&program_id.to_string()),
                 Some(expected_protocol)
             );
             assert_eq!(expected_protocol.as_str(), expected_name);
         }
 
         assert_eq!(Protocol::from_program_id("unknown_program"), None);
+        assert_eq!(Protocol::from_program_id("not_even_base58!@#"), None);
         assert_eq!(
             Protocol::all_program_ids(),
-            &[
-                JUPITER_DCA_PROGRAM_ID,
-                JUPITER_LIMIT_ORDER_PROGRAM_ID,
-                JUPITER_LIMIT_ORDER_2_PROGRAM_ID,
-                KAMINO_LIMIT_ORDER_PROGRAM_ID
+            [
+                carbon_jupiter_dca_decoder::PROGRAM_ID,
+                carbon_jupiter_limit_order_decoder::PROGRAM_ID,
+                carbon_jupiter_limit_order_2_decoder::PROGRAM_ID,
+                carbon_kamino_limit_order_decoder::PROGRAM_ID,
             ]
         );
     }

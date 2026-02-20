@@ -579,6 +579,7 @@ dependencies = [
  "cargo-husky",
  "serde",
  "serde_json",
+ "solana-pubkey 3.0.0",
  "strum",
  "strum_macros",
  "thiserror 2.0.18",

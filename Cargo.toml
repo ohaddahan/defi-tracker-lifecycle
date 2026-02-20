@@ -60,6 +60,7 @@ carbon-jupiter-dca-decoder = "0.12"
 carbon-jupiter-limit-order-decoder = "0.12"
 carbon-jupiter-limit-order-2-decoder = "0.12"
 carbon-kamino-limit-order-decoder = "0.12"
+solana-pubkey = "3"
 
 [dev-dependencies.cargo-husky]
 version = "1"

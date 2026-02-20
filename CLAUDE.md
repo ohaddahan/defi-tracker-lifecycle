@@ -35,7 +35,9 @@ tests/
 
 **Typed deserialization**: Inner types use `String` for pubkeys since `solana_pubkey::Pubkey` v3 serde expects byte arrays, not base58 strings in JSON.
 
-**Compile-time guardrails**: Each protocol has a `#[cfg(test)]` `classify_decoded()` function with exhaustive match on the Carbon instruction enum. When upstream adds new variants, tests break at compile time. Program ID alignment tests verify our string constants match Carbon's `PROGRAM_ID`.
+**Program IDs from Carbon**: `Protocol::from_program_id(&str)` parses the input to `solana_pubkey::Pubkey` and compares directly against each Carbon decoder crate's `PROGRAM_ID` constant. No duplicated string constants — correctness by construction.
+
+**Compile-time guardrails**: Each protocol has a `#[cfg(test)]` `classify_decoded()` function with exhaustive match on the Carbon instruction enum. When upstream adds new variants, tests break at compile time.
 
 **Runtime guardrails (mirror enum alignment tests)**: Each protocol has a `mirror_enums_cover_all_carbon_variants` test that constructs `{"VariantName": <minimal_payload>}` JSON for every Carbon variant and asserts the mirror enum (`*InstructionKind`, `*EventEnvelope`) deserializes it. This bridges the compile-time `classify_decoded()` guard with the runtime serde dispatch — if someone adds a Carbon variant to `classify_decoded()` but forgets the mirror enum, this test catches it.
 
@@ -65,7 +67,7 @@ tests/
 ## Commands
 
 ```bash
-cargo test                  # 92 tests (65 unit + 27 integration)
+cargo test                  # 141 tests (114 unit + 27 integration)
 cargo clippy                # pedantic + deny(unwrap_used, expect_used, panic, ...)
 cargo fmt                   # format
 cargo llvm-cov              # coverage
