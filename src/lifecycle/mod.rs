@@ -242,4 +242,100 @@ mod tests {
             }
         }
     }
+
+    fn apply_sequence(steps: &[(LifecycleTransition, TransitionDecision)]) {
+        let mut current_status: Option<&str> = None;
+
+        for (i, (transition, expected_decision)) in steps.iter().enumerate() {
+            let decision = LifecycleEngine::decide_transition(current_status, *transition);
+            assert_eq!(
+                decision, *expected_decision,
+                "step {i}: expected {expected_decision:?} for {transition:?} with status {current_status:?}"
+            );
+
+            if decision == TransitionDecision::Apply {
+                current_status = match transition {
+                    LifecycleTransition::Create => Some("created"),
+                    LifecycleTransition::FillDelta => current_status,
+                    LifecycleTransition::Close { status } => Some(status.as_str()),
+                    LifecycleTransition::MetadataOnly => current_status,
+                };
+            }
+        }
+    }
+
+    #[test]
+    fn lifecycle_sequence_dca_happy_path() {
+        apply_sequence(&[
+            (LifecycleTransition::Create, TransitionDecision::Apply),
+            (LifecycleTransition::FillDelta, TransitionDecision::Apply),
+            (LifecycleTransition::FillDelta, TransitionDecision::Apply),
+            (
+                LifecycleTransition::Close {
+                    status: TerminalStatus::Completed,
+                },
+                TransitionDecision::Apply,
+            ),
+            (
+                LifecycleTransition::FillDelta,
+                TransitionDecision::IgnoreTerminalViolation,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn lifecycle_sequence_limit_cancel() {
+        apply_sequence(&[
+            (LifecycleTransition::Create, TransitionDecision::Apply),
+            (LifecycleTransition::FillDelta, TransitionDecision::Apply),
+            (
+                LifecycleTransition::Close {
+                    status: TerminalStatus::Cancelled,
+                },
+                TransitionDecision::Apply,
+            ),
+            (
+                LifecycleTransition::Create,
+                TransitionDecision::IgnoreTerminalViolation,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn lifecycle_sequence_limit_expired() {
+        apply_sequence(&[
+            (LifecycleTransition::Create, TransitionDecision::Apply),
+            (
+                LifecycleTransition::Close {
+                    status: TerminalStatus::Expired,
+                },
+                TransitionDecision::Apply,
+            ),
+            (
+                LifecycleTransition::FillDelta,
+                TransitionDecision::IgnoreTerminalViolation,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn lifecycle_sequence_terminal_still_accepts_metadata() {
+        apply_sequence(&[
+            (LifecycleTransition::Create, TransitionDecision::Apply),
+            (
+                LifecycleTransition::Close {
+                    status: TerminalStatus::Completed,
+                },
+                TransitionDecision::Apply,
+            ),
+            (LifecycleTransition::MetadataOnly, TransitionDecision::Apply),
+            (LifecycleTransition::MetadataOnly, TransitionDecision::Apply),
+            (
+                LifecycleTransition::Close {
+                    status: TerminalStatus::Cancelled,
+                },
+                TransitionDecision::IgnoreTerminalViolation,
+            ),
+        ]);
+    }
 }

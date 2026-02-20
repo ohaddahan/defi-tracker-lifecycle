@@ -38,15 +38,11 @@ pub trait ProtocolAdapter: Sync {
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType>;
 
-    fn classify_event(&self, ev: &RawEvent) -> Option<EventType>;
-
-    fn resolve_event(
+    fn classify_and_resolve_event(
         &self,
         ev: &RawEvent,
-        fields: &serde_json::Value,
-        event_type: EventType,
         ctx: &ResolveContext,
-    ) -> Result<(CorrelationOutcome, EventPayload), Error>;
+    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>>;
 }
 
 #[derive(Debug)]
@@ -72,48 +68,16 @@ impl ProtocolAdapter for DcaAdapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        protocols::dca::classify_instruction(&ix.instruction_name)
+        protocols::dca::classify_instruction_envelope(ix)
     }
 
-    fn classify_event(&self, ev: &RawEvent) -> Option<EventType> {
-        protocols::dca::classify_event(&ev.event_name)
-    }
-
-    fn resolve_event(
+    fn classify_and_resolve_event(
         &self,
-        _ev: &RawEvent,
-        fields: &serde_json::Value,
-        event_type: EventType,
+        ev: &RawEvent,
         _ctx: &ResolveContext,
-    ) -> Result<(CorrelationOutcome, EventPayload), Error> {
-        match event_type {
-            EventType::FillCompleted => {
-                let fill = protocols::dca::parse_fill_event(fields)?;
-                let correlation = CorrelationOutcome::Correlated(vec![fill.order_pda]);
-                let payload = EventPayload::DcaFill {
-                    in_amount: fill.in_amount,
-                    out_amount: fill.out_amount,
-                };
-                Ok((correlation, payload))
-            }
-            EventType::Closed => {
-                let closed = protocols::dca::parse_closed_event(fields)?;
-                let status = dca_closed_terminal_status(&closed);
-                let correlation = CorrelationOutcome::Correlated(vec![closed.order_pda]);
-                Ok((correlation, EventPayload::DcaClosed { status }))
-            }
-            EventType::Created
-            | EventType::FeeCollected
-            | EventType::Withdrawn
-            | EventType::Deposited => {
-                let order_pda = protocols::dca::parse_event_order_pda(fields, "dca_event")?;
-                Ok((
-                    CorrelationOutcome::Correlated(vec![order_pda]),
-                    EventPayload::None,
-                ))
-            }
-            _ => Ok((CorrelationOutcome::NotRequired, EventPayload::None)),
-        }
+    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
+        let fields = ev.fields.as_ref()?;
+        protocols::dca::resolve_event_envelope(fields)
     }
 }
 
@@ -123,42 +87,16 @@ impl ProtocolAdapter for LimitV1Adapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        protocols::limit_v1::classify_instruction(&ix.instruction_name)
+        protocols::limit_v1::classify_instruction_envelope(ix)
     }
 
-    fn classify_event(&self, ev: &RawEvent) -> Option<EventType> {
-        protocols::limit_v1::classify_event(&ev.event_name)
-    }
-
-    fn resolve_event(
+    fn classify_and_resolve_event(
         &self,
-        _ev: &RawEvent,
-        fields: &serde_json::Value,
-        event_type: EventType,
+        ev: &RawEvent,
         _ctx: &ResolveContext,
-    ) -> Result<(CorrelationOutcome, EventPayload), Error> {
-        match event_type {
-            EventType::Created | EventType::Cancelled => {
-                let order_pda =
-                    protocols::limit_v1::parse_order_pda_event(fields, "limit_v1_event")?;
-                Ok((
-                    CorrelationOutcome::Correlated(vec![order_pda]),
-                    EventPayload::None,
-                ))
-            }
-            EventType::FillCompleted => {
-                let trade = protocols::limit_v1::parse_trade_event(fields)?;
-                let correlation = CorrelationOutcome::Correlated(vec![trade.order_pda]);
-                let payload = EventPayload::LimitFill {
-                    in_amount: trade.in_amount,
-                    out_amount: trade.out_amount,
-                    remaining_in_amount: trade.remaining_in_amount,
-                    counterparty: trade.taker,
-                };
-                Ok((correlation, payload))
-            }
-            _ => Ok((CorrelationOutcome::NotRequired, EventPayload::None)),
-        }
+    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
+        let fields = ev.fields.as_ref()?;
+        protocols::limit_v1::resolve_event_envelope(fields)
     }
 }
 
@@ -168,42 +106,16 @@ impl ProtocolAdapter for LimitV2Adapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        protocols::limit_v2::classify_instruction(&ix.instruction_name)
+        protocols::limit_v2::classify_instruction_envelope(ix)
     }
 
-    fn classify_event(&self, ev: &RawEvent) -> Option<EventType> {
-        protocols::limit_v2::classify_event(&ev.event_name)
-    }
-
-    fn resolve_event(
+    fn classify_and_resolve_event(
         &self,
-        _ev: &RawEvent,
-        fields: &serde_json::Value,
-        event_type: EventType,
+        ev: &RawEvent,
         _ctx: &ResolveContext,
-    ) -> Result<(CorrelationOutcome, EventPayload), Error> {
-        match event_type {
-            EventType::Created | EventType::Cancelled => {
-                let order_pda =
-                    protocols::limit_v1::parse_order_pda_event(fields, "limit_v2_event")?;
-                Ok((
-                    CorrelationOutcome::Correlated(vec![order_pda]),
-                    EventPayload::None,
-                ))
-            }
-            EventType::FillCompleted => {
-                let trade = protocols::limit_v1::parse_trade_event(fields)?;
-                let correlation = CorrelationOutcome::Correlated(vec![trade.order_pda]);
-                let payload = EventPayload::LimitFill {
-                    in_amount: trade.in_amount,
-                    out_amount: trade.out_amount,
-                    remaining_in_amount: trade.remaining_in_amount,
-                    counterparty: trade.taker,
-                };
-                Ok((correlation, payload))
-            }
-            _ => Ok((CorrelationOutcome::NotRequired, EventPayload::None)),
-        }
+    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
+        let fields = ev.fields.as_ref()?;
+        protocols::limit_v2::resolve_event_envelope(fields)
     }
 }
 
@@ -213,51 +125,16 @@ impl ProtocolAdapter for KaminoAdapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        protocols::kamino::classify_instruction(&ix.instruction_name)
+        protocols::kamino::classify_instruction_envelope(ix)
     }
 
-    fn classify_event(&self, ev: &RawEvent) -> Option<EventType> {
-        protocols::kamino::classify_event(&ev.event_name)
-    }
-
-    fn resolve_event(
+    fn classify_and_resolve_event(
         &self,
         ev: &RawEvent,
-        fields: &serde_json::Value,
-        event_type: EventType,
         ctx: &ResolveContext,
-    ) -> Result<(CorrelationOutcome, EventPayload), Error> {
-        if event_type != EventType::FillCompleted {
-            return Ok((CorrelationOutcome::NotRequired, EventPayload::None));
-        }
-
-        let order_pdas = match &ctx.pre_fetched_order_pdas {
-            Some(pdas) => pdas.clone(),
-            None => Vec::new(),
-        };
-
-        if order_pdas.is_empty() {
-            return Ok((
-                CorrelationOutcome::Uncorrelated {
-                    reason: format!(
-                        "cannot correlate Kamino OrderDisplayEvent for signature {}",
-                        ev.signature
-                    ),
-                },
-                EventPayload::None,
-            ));
-        }
-
-        let display = protocols::kamino::parse_order_display_event(fields)?;
-        let terminal_status = kamino_display_terminal_status(display.status)?;
-        Ok((
-            CorrelationOutcome::Correlated(order_pdas),
-            EventPayload::KaminoDisplay {
-                remaining_input_amount: display.remaining_input_amount,
-                filled_output_amount: display.filled_output_amount,
-                terminal_status,
-            },
-        ))
+    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
+        let fields = ev.fields.as_ref()?;
+        protocols::kamino::resolve_event_envelope(fields, &ev.signature, ctx)
     }
 }
 
@@ -386,21 +263,24 @@ mod tests {
             inner_program_id: "p".to_string(),
             event_name: "OrderDisplayEvent".to_string(),
             fields: Some(serde_json::json!({
-                "remaining_input_amount": 0,
-                "filled_output_amount": 100,
-                "number_of_fills": 1,
-                "status": 1
+                "OrderDisplayEvent": {
+                    "remaining_input_amount": 0,
+                    "filled_output_amount": 100,
+                    "number_of_fills": 1,
+                    "status": 1
+                }
             })),
             slot: 1,
         };
-        let fields = ev.fields.as_ref().unwrap();
         let ctx = ResolveContext {
             pre_fetched_order_pdas: None,
         };
 
-        let (correlation, payload) = adapter
-            .resolve_event(&ev, fields, EventType::FillCompleted, &ctx)
+        let result = adapter
+            .classify_and_resolve_event(&ev, &ctx)
+            .unwrap()
             .unwrap();
+        let (_event_type, correlation, payload) = result;
 
         assert!(matches!(
             correlation,

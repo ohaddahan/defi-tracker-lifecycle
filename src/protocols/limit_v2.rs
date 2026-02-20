@@ -1,13 +1,87 @@
 use crate::error::Error;
+use crate::lifecycle::adapters::{CorrelationOutcome, EventPayload};
 use crate::protocols::{AccountInfo, EventType, find_account_by_name};
+use crate::types::RawInstruction;
 
-pub fn classify_instruction(name: &str) -> Option<EventType> {
-    match name {
-        "InitializeOrder" => Some(EventType::Created),
-        "PreFlashFillOrder" => Some(EventType::FillInitiated),
-        "FlashFillOrder" => Some(EventType::FillCompleted),
-        "CancelOrder" => Some(EventType::Cancelled),
-        _ => None,
+#[derive(serde::Deserialize)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variant names mirror Carbon decoder crate"
+)]
+pub(crate) enum LimitV2EventEnvelope {
+    CreateOrderEvent(OrderKeyHolder),
+    CancelOrderEvent(OrderKeyHolder),
+    TradeEvent(TradeEventFields),
+}
+
+#[derive(serde::Deserialize)]
+#[expect(
+    dead_code,
+    reason = "variant data consumed by serde, not read directly"
+)]
+pub(crate) enum LimitV2InstructionKind {
+    InitializeOrder(serde_json::Value),
+    PreFlashFillOrder(serde_json::Value),
+    FlashFillOrder(serde_json::Value),
+    CancelOrder(serde_json::Value),
+    UpdateFee(serde_json::Value),
+    WithdrawFee(serde_json::Value),
+}
+
+pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
+    let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
+    let kind: LimitV2InstructionKind = serde_json::from_value(wrapper).ok()?;
+    match kind {
+        LimitV2InstructionKind::InitializeOrder(_) => Some(EventType::Created),
+        LimitV2InstructionKind::PreFlashFillOrder(_) => Some(EventType::FillInitiated),
+        LimitV2InstructionKind::FlashFillOrder(_) => Some(EventType::FillCompleted),
+        LimitV2InstructionKind::CancelOrder(_) => Some(EventType::Cancelled),
+        LimitV2InstructionKind::UpdateFee(_) | LimitV2InstructionKind::WithdrawFee(_) => None,
+    }
+}
+
+pub fn resolve_event_envelope(
+    fields: &serde_json::Value,
+) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
+    let envelope: LimitV2EventEnvelope = match serde_json::from_value(fields.clone()) {
+        Ok(e) => e,
+        Err(_) => return None,
+    };
+
+    Some(resolve_limit_v2_event(envelope))
+}
+
+fn resolve_limit_v2_event(
+    envelope: LimitV2EventEnvelope,
+) -> Result<(EventType, CorrelationOutcome, EventPayload), Error> {
+    match envelope {
+        LimitV2EventEnvelope::CreateOrderEvent(OrderKeyHolder { order_key }) => Ok((
+            EventType::Created,
+            CorrelationOutcome::Correlated(vec![order_key]),
+            EventPayload::None,
+        )),
+        LimitV2EventEnvelope::CancelOrderEvent(OrderKeyHolder { order_key }) => Ok((
+            EventType::Cancelled,
+            CorrelationOutcome::Correlated(vec![order_key]),
+            EventPayload::None,
+        )),
+        LimitV2EventEnvelope::TradeEvent(TradeEventFields {
+            order_key,
+            taker,
+            making_amount,
+            taking_amount,
+            remaining_making_amount,
+            ..
+        }) => Ok((
+            EventType::FillCompleted,
+            CorrelationOutcome::Correlated(vec![order_key]),
+            EventPayload::LimitFill {
+                in_amount: making_amount as i64,
+                out_amount: taking_amount as i64,
+                remaining_in_amount: remaining_making_amount as i64,
+                counterparty: taker,
+            },
+        )),
     }
 }
 
@@ -81,44 +155,97 @@ pub fn extract_create_mints(accounts: &[AccountInfo]) -> Result<LimitV2CreateMin
     })
 }
 
-pub fn classify_event(name: &str) -> Option<EventType> {
-    match name {
-        "CreateOrderEvent" => Some(EventType::Created),
-        "CancelOrderEvent" => Some(EventType::Cancelled),
-        "TradeEvent" => Some(EventType::FillCompleted),
-        _ => None,
-    }
+#[derive(serde::Deserialize)]
+pub(crate) struct OrderKeyHolder {
+    order_key: String,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct TradeEventFields {
+    order_key: String,
+    #[serde(default = "default_unknown")]
+    taker: String,
+    making_amount: u64,
+    taking_amount: u64,
+    remaining_making_amount: u64,
+    #[expect(dead_code, reason = "consumed by serde for completeness")]
+    remaining_taking_amount: u64,
+}
+
+fn default_unknown() -> String {
+    "unknown".to_string()
+}
+
+pub struct LimitV2TradeEvent {
+    pub order_pda: String,
+    pub taker: String,
+    pub in_amount: i64,
+    pub out_amount: i64,
+    pub remaining_in_amount: i64,
+    pub remaining_out_amount: i64,
+}
+
+#[derive(serde::Deserialize)]
+struct InitializeOrderParamsFields {
+    #[serde(default)]
+    unique_id: Option<u64>,
+    making_amount: u64,
+    taking_amount: u64,
+    expired_at: Option<i64>,
+    #[serde(default)]
+    fee_bps: Option<u16>,
+}
+
+#[derive(serde::Deserialize)]
+struct InitializeOrderWrapper {
+    params: InitializeOrderParamsFields,
 }
 
 pub fn parse_create_args(args: &serde_json::Value) -> Result<LimitV2CreateArgs, Error> {
-    let source = args.get("params").unwrap_or(args);
+    let params = if let Ok(wrapper) = serde_json::from_value::<InitializeOrderWrapper>(args.clone())
+    {
+        wrapper.params
+    } else {
+        serde_json::from_value::<InitializeOrderParamsFields>(args.clone()).map_err(|e| {
+            Error::Protocol {
+                reason: format!("failed to parse Limit v2 create args: {e}"),
+            }
+        })?
+    };
 
-    let making_amount = source
-        .get("making_amount")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| Error::Protocol {
-            reason: "missing making_amount in Limit v2 create args".into(),
-        })?;
-    let taking_amount = source
-        .get("taking_amount")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| Error::Protocol {
-            reason: "missing taking_amount in Limit v2 create args".into(),
-        })?;
-    let unique_id = source.get("unique_id").and_then(|v| v.as_i64());
-    let expired_at = source.get("expired_at").and_then(|v| v.as_i64());
-    let fee_bps = source
-        .get("fee_bps")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i16);
-
-    Ok(LimitV2CreateArgs {
+    let InitializeOrderParamsFields {
         unique_id,
         making_amount,
         taking_amount,
         expired_at,
         fee_bps,
+    } = params;
+
+    Ok(LimitV2CreateArgs {
+        unique_id: unique_id.map(|v| v as i64),
+        making_amount: making_amount as i64,
+        taking_amount: taking_amount as i64,
+        expired_at,
+        fee_bps: fee_bps.map(|v| v as i16),
     })
+}
+
+#[cfg(test)]
+pub fn classify_decoded(
+    decoded: &carbon_jupiter_limit_order_2_decoder::instructions::JupiterLimitOrder2Instruction,
+) -> Option<EventType> {
+    use carbon_jupiter_limit_order_2_decoder::instructions::JupiterLimitOrder2Instruction;
+    match decoded {
+        JupiterLimitOrder2Instruction::InitializeOrder(_) => Some(EventType::Created),
+        JupiterLimitOrder2Instruction::PreFlashFillOrder(_) => Some(EventType::FillInitiated),
+        JupiterLimitOrder2Instruction::FlashFillOrder(_) => Some(EventType::FillCompleted),
+        JupiterLimitOrder2Instruction::CancelOrder(_) => Some(EventType::Cancelled),
+        JupiterLimitOrder2Instruction::CreateOrderEvent(_) => Some(EventType::Created),
+        JupiterLimitOrder2Instruction::CancelOrderEvent(_) => Some(EventType::Cancelled),
+        JupiterLimitOrder2Instruction::TradeEvent(_) => Some(EventType::FillCompleted),
+        JupiterLimitOrder2Instruction::UpdateFee(_)
+        | JupiterLimitOrder2Instruction::WithdrawFee(_) => None,
+    }
 }
 
 #[cfg(test)]
@@ -127,46 +254,78 @@ mod tests {
     use super::*;
 
     #[test]
-    fn classify_all_instruction_names() {
-        assert_eq!(
-            classify_instruction("InitializeOrder"),
-            Some(EventType::Created)
-        );
-        assert_eq!(
-            classify_instruction("PreFlashFillOrder"),
-            Some(EventType::FillInitiated)
-        );
-        assert_eq!(
-            classify_instruction("FlashFillOrder"),
-            Some(EventType::FillCompleted)
-        );
-        assert_eq!(
-            classify_instruction("CancelOrder"),
-            Some(EventType::Cancelled)
-        );
-        assert_eq!(classify_instruction("Unknown"), None);
+    fn classify_known_instructions_via_envelope() {
+        let cases = [
+            ("InitializeOrder", Some(EventType::Created)),
+            ("PreFlashFillOrder", Some(EventType::FillInitiated)),
+            ("FlashFillOrder", Some(EventType::FillCompleted)),
+            ("CancelOrder", Some(EventType::Cancelled)),
+            ("UpdateFee", None),
+            ("WithdrawFee", None),
+            ("Unknown", None),
+        ];
+        for (name, expected) in cases {
+            let ix = RawInstruction {
+                id: 1,
+                signature: "sig".to_string(),
+                instruction_index: 0,
+                program_id: "p".to_string(),
+                inner_program_id: "p".to_string(),
+                instruction_name: name.to_string(),
+                accounts: None,
+                args: None,
+                slot: 1,
+            };
+            assert_eq!(
+                classify_instruction_envelope(&ix),
+                expected,
+                "mismatch for {name}"
+            );
+        }
     }
 
     #[test]
-    fn classify_all_event_names() {
-        assert_eq!(classify_event("CreateOrderEvent"), Some(EventType::Created));
-        assert_eq!(
-            classify_event("CancelOrderEvent"),
-            Some(EventType::Cancelled)
-        );
-        assert_eq!(classify_event("TradeEvent"), Some(EventType::FillCompleted));
-        assert_eq!(classify_event("Unknown"), None);
+    fn resolve_trade_event_from_envelope() {
+        let fields = serde_json::json!({
+            "TradeEvent": {
+                "order_key": "HkLZgYy93cEi3Fn96SvdWeJk8DNeHeU5wiNV5SeRLiJC",
+                "taker": "j1oeQoPeuEDmjvyMwBmCWexzCQup77kbKKxV59CnYbd",
+                "making_amount": 724_773_829_u64,
+                "taking_amount": 51_821_329_u64,
+                "remaining_making_amount": 89_147_181_051_u64,
+                "remaining_taking_amount": 6_374_023_074_u64
+            }
+        });
+        let (event_type, correlation, payload) = resolve_event_envelope(&fields).unwrap().unwrap();
+        assert_eq!(event_type, EventType::FillCompleted);
+        let CorrelationOutcome::Correlated(pdas) = correlation else {
+            panic!("expected Correlated");
+        };
+        assert_eq!(pdas, vec!["HkLZgYy93cEi3Fn96SvdWeJk8DNeHeU5wiNV5SeRLiJC"]);
+        let EventPayload::LimitFill {
+            in_amount,
+            out_amount,
+            remaining_in_amount,
+            counterparty,
+        } = payload
+        else {
+            panic!("expected LimitFill");
+        };
+        assert_eq!(in_amount, 724_773_829);
+        assert_eq!(out_amount, 51_821_329);
+        assert_eq!(remaining_in_amount, 89_147_181_051);
+        assert_eq!(counterparty, "j1oeQoPeuEDmjvyMwBmCWexzCQup77kbKKxV59CnYbd");
     }
 
     #[test]
     fn parse_create_args_with_params_wrapper() {
         let args = serde_json::json!({
             "params": {
-                "making_amount": 1000,
-                "taking_amount": 500,
-                "unique_id": 42,
-                "expired_at": 1_700_000_000,
-                "fee_bps": 25
+                "making_amount": 1000_u64,
+                "taking_amount": 500_u64,
+                "unique_id": 42_u64,
+                "expired_at": 1_700_000_000_i64,
+                "fee_bps": 25_u16
             }
         });
         let parsed = parse_create_args(&args).unwrap();
@@ -180,8 +339,8 @@ mod tests {
     #[test]
     fn parse_create_args_without_params_wrapper() {
         let args = serde_json::json!({
-            "making_amount": 2000,
-            "taking_amount": 1000
+            "making_amount": 2000_u64,
+            "taking_amount": 1000_u64
         });
         let parsed = parse_create_args(&args).unwrap();
         assert_eq!(parsed.making_amount, 2000);
@@ -189,5 +348,38 @@ mod tests {
         assert_eq!(parsed.unique_id, None);
         assert_eq!(parsed.expired_at, None);
         assert_eq!(parsed.fee_bps, None);
+    }
+
+    #[test]
+    fn mirror_enums_cover_all_carbon_variants() {
+        let instruction_variants = [
+            "InitializeOrder",
+            "PreFlashFillOrder",
+            "FlashFillOrder",
+            "CancelOrder",
+            "UpdateFee",
+            "WithdrawFee",
+        ];
+        for name in instruction_variants {
+            let json = serde_json::json!({ name: serde_json::Value::Null });
+            assert!(
+                serde_json::from_value::<LimitV2InstructionKind>(json).is_ok(),
+                "LimitV2InstructionKind missing variant: {name}"
+            );
+        }
+
+        for name in ["CreateOrderEvent", "CancelOrderEvent"] {
+            let json = serde_json::json!({ name: { "order_key": "test" } });
+            assert!(
+                serde_json::from_value::<LimitV2EventEnvelope>(json).is_ok(),
+                "LimitV2EventEnvelope missing variant: {name}"
+            );
+        }
+
+        let trade = serde_json::json!({
+            "TradeEvent": { "order_key": "t", "making_amount": 1_u64, "taking_amount": 1_u64,
+                "remaining_making_amount": 0_u64, "remaining_taking_amount": 0_u64 }
+        });
+        assert!(serde_json::from_value::<LimitV2EventEnvelope>(trade).is_ok());
     }
 }

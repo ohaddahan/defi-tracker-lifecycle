@@ -1,14 +1,107 @@
 use crate::error::Error;
+use crate::lifecycle::adapters::{
+    CorrelationOutcome, EventPayload, kamino_display_terminal_status,
+};
 use crate::protocols::{AccountInfo, EventType, find_account_by_name};
+use crate::types::{RawInstruction, ResolveContext};
 
-pub fn classify_instruction(name: &str) -> Option<EventType> {
-    match name {
-        "CreateOrder" => Some(EventType::Created),
-        "TakeOrder" => Some(EventType::FillCompleted),
-        "FlashTakeOrderStart" => Some(EventType::FillInitiated),
-        "FlashTakeOrderEnd" => Some(EventType::FillCompleted),
-        "CloseOrderAndClaimTip" => Some(EventType::Closed),
-        _ => None,
+#[derive(serde::Deserialize)]
+#[expect(
+    dead_code,
+    reason = "variant data consumed by serde, not read directly"
+)]
+pub(crate) enum KaminoEventEnvelope {
+    OrderDisplayEvent(OrderDisplayEventFields),
+    UserSwapBalancesEvent(serde_json::Value),
+}
+
+#[derive(serde::Deserialize)]
+#[expect(
+    dead_code,
+    reason = "variant data consumed by serde, not read directly"
+)]
+pub(crate) enum KaminoInstructionKind {
+    CreateOrder(serde_json::Value),
+    TakeOrder(serde_json::Value),
+    FlashTakeOrderStart(serde_json::Value),
+    FlashTakeOrderEnd(serde_json::Value),
+    CloseOrderAndClaimTip(serde_json::Value),
+    InitializeGlobalConfig(serde_json::Value),
+    InitializeVault(serde_json::Value),
+    UpdateGlobalConfig(serde_json::Value),
+    UpdateGlobalConfigAdmin(serde_json::Value),
+    WithdrawHostTip(serde_json::Value),
+    LogUserSwapBalances(serde_json::Value),
+}
+
+pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
+    let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
+    let kind: KaminoInstructionKind = serde_json::from_value(wrapper).ok()?;
+    match kind {
+        KaminoInstructionKind::CreateOrder(_) => Some(EventType::Created),
+        KaminoInstructionKind::TakeOrder(_) => Some(EventType::FillCompleted),
+        KaminoInstructionKind::FlashTakeOrderStart(_) => Some(EventType::FillInitiated),
+        KaminoInstructionKind::FlashTakeOrderEnd(_) => Some(EventType::FillCompleted),
+        KaminoInstructionKind::CloseOrderAndClaimTip(_) => Some(EventType::Closed),
+        KaminoInstructionKind::InitializeGlobalConfig(_)
+        | KaminoInstructionKind::InitializeVault(_)
+        | KaminoInstructionKind::UpdateGlobalConfig(_)
+        | KaminoInstructionKind::UpdateGlobalConfigAdmin(_)
+        | KaminoInstructionKind::WithdrawHostTip(_)
+        | KaminoInstructionKind::LogUserSwapBalances(_) => None,
+    }
+}
+
+pub fn resolve_event_envelope(
+    fields: &serde_json::Value,
+    signature: &str,
+    ctx: &ResolveContext,
+) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
+    let envelope: KaminoEventEnvelope = match serde_json::from_value(fields.clone()) {
+        Ok(e) => e,
+        Err(_) => return None,
+    };
+
+    Some(resolve_kamino_event(envelope, signature, ctx))
+}
+
+fn resolve_kamino_event(
+    envelope: KaminoEventEnvelope,
+    signature: &str,
+    ctx: &ResolveContext,
+) -> Result<(EventType, CorrelationOutcome, EventPayload), Error> {
+    match envelope {
+        KaminoEventEnvelope::UserSwapBalancesEvent(_) => Ok((
+            EventType::FillCompleted,
+            CorrelationOutcome::NotRequired,
+            EventPayload::None,
+        )),
+        KaminoEventEnvelope::OrderDisplayEvent(display_fields) => {
+            let order_pdas = ctx.pre_fetched_order_pdas.clone().unwrap_or_default();
+
+            if order_pdas.is_empty() {
+                return Ok((
+                    EventType::FillCompleted,
+                    CorrelationOutcome::Uncorrelated {
+                        reason: format!(
+                            "cannot correlate Kamino OrderDisplayEvent for signature {signature}"
+                        ),
+                    },
+                    EventPayload::None,
+                ));
+            }
+
+            let terminal_status = kamino_display_terminal_status(i64::from(display_fields.status))?;
+            Ok((
+                EventType::FillCompleted,
+                CorrelationOutcome::Correlated(order_pdas),
+                EventPayload::KaminoDisplay {
+                    remaining_input_amount: display_fields.remaining_input_amount as i64,
+                    filled_output_amount: display_fields.filled_output_amount as i64,
+                    terminal_status,
+                },
+            ))
+        }
     }
 }
 
@@ -81,33 +174,28 @@ pub fn extract_create_mints(accounts: &[AccountInfo]) -> Result<KaminoCreateMint
     })
 }
 
-pub fn parse_create_args(args: &serde_json::Value) -> Result<KaminoCreateArgs, Error> {
-    let input_amount = args
-        .get("input_amount")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| Error::Protocol {
-            reason: "missing input_amount in Kamino create args".into(),
-        })?;
-    let output_amount = args
-        .get("output_amount")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| Error::Protocol {
-            reason: "missing output_amount in Kamino create args".into(),
-        })?;
-    let order_type = args.get("order_type").and_then(|v| v.as_i64()).unwrap_or(0) as i16;
+#[derive(serde::Deserialize)]
+struct CreateOrderFields {
+    input_amount: u64,
+    output_amount: u64,
+    #[serde(default)]
+    order_type: u8,
+}
 
-    Ok(KaminoCreateArgs {
+pub fn parse_create_args(args: &serde_json::Value) -> Result<KaminoCreateArgs, Error> {
+    let CreateOrderFields {
         input_amount,
         output_amount,
         order_type,
-    })
-}
+    } = serde_json::from_value(args.clone()).map_err(|e| Error::Protocol {
+        reason: format!("failed to parse Kamino create args: {e}"),
+    })?;
 
-pub fn classify_event(name: &str) -> Option<EventType> {
-    match name {
-        "OrderDisplayEvent" => Some(EventType::FillCompleted),
-        _ => None,
-    }
+    Ok(KaminoCreateArgs {
+        input_amount: input_amount as i64,
+        output_amount: output_amount as i64,
+        order_type: i16::from(order_type),
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,6 +218,19 @@ pub fn parse_display_status(status: i64) -> Result<KaminoDisplayStatus, Error> {
     }
 }
 
+#[derive(serde::Deserialize)]
+pub(crate) struct OrderDisplayEventFields {
+    #[serde(default)]
+    pub remaining_input_amount: u64,
+    #[serde(default)]
+    pub filled_output_amount: u64,
+    #[serde(default)]
+    #[expect(dead_code, reason = "consumed by serde for completeness")]
+    pub number_of_fills: u64,
+    #[serde(default)]
+    pub status: u8,
+}
+
 pub struct KaminoOrderDisplayEvent {
     pub remaining_input_amount: i64,
     pub filled_output_amount: i64,
@@ -137,48 +238,154 @@ pub struct KaminoOrderDisplayEvent {
     pub status: i64,
 }
 
-pub fn parse_order_display_event(
-    fields: &serde_json::Value,
-) -> Result<KaminoOrderDisplayEvent, Error> {
-    let remaining_input_amount = fields
-        .get("remaining_input_amount")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let filled_output_amount = fields
-        .get("filled_output_amount")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let number_of_fills = fields
-        .get("number_of_fills")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let status = fields.get("status").and_then(|v| v.as_i64()).unwrap_or(0);
-
-    Ok(KaminoOrderDisplayEvent {
-        remaining_input_amount,
-        filled_output_amount,
-        number_of_fills,
-        status,
-    })
+#[cfg(test)]
+pub fn classify_decoded(
+    decoded: &carbon_kamino_limit_order_decoder::instructions::KaminoLimitOrderInstruction,
+) -> Option<EventType> {
+    use carbon_kamino_limit_order_decoder::instructions::KaminoLimitOrderInstruction;
+    match decoded {
+        KaminoLimitOrderInstruction::CreateOrder(_) => Some(EventType::Created),
+        KaminoLimitOrderInstruction::TakeOrder(_) => Some(EventType::FillCompleted),
+        KaminoLimitOrderInstruction::FlashTakeOrderStart(_) => Some(EventType::FillInitiated),
+        KaminoLimitOrderInstruction::FlashTakeOrderEnd(_) => Some(EventType::FillCompleted),
+        KaminoLimitOrderInstruction::CloseOrderAndClaimTip(_) => Some(EventType::Closed),
+        KaminoLimitOrderInstruction::OrderDisplayEvent(_) => Some(EventType::FillCompleted),
+        KaminoLimitOrderInstruction::InitializeGlobalConfig(_)
+        | KaminoLimitOrderInstruction::InitializeVault(_)
+        | KaminoLimitOrderInstruction::UpdateGlobalConfig(_)
+        | KaminoLimitOrderInstruction::UpdateGlobalConfigAdmin(_)
+        | KaminoLimitOrderInstruction::WithdrawHostTip(_)
+        | KaminoLimitOrderInstruction::LogUserSwapBalances(_)
+        | KaminoLimitOrderInstruction::UserSwapBalancesEvent(_) => None,
+    }
 }
 
 #[cfg(test)]
 #[expect(clippy::unwrap_used, reason = "test assertions")]
 mod tests {
-    use super::{
-        KaminoDisplayStatus, classify_instruction, extract_order_pda, parse_display_status,
-        parse_order_display_event,
-    };
-    use crate::protocols::{AccountInfo, EventType};
+    use super::*;
+
+    #[test]
+    fn classify_known_instructions_via_envelope() {
+        let cases = [
+            ("CreateOrder", Some(EventType::Created)),
+            ("TakeOrder", Some(EventType::FillCompleted)),
+            ("FlashTakeOrderStart", Some(EventType::FillInitiated)),
+            ("FlashTakeOrderEnd", Some(EventType::FillCompleted)),
+            ("CloseOrderAndClaimTip", Some(EventType::Closed)),
+            ("InitializeGlobalConfig", None),
+            ("InitializeVault", None),
+            ("UpdateGlobalConfig", None),
+            ("UpdateGlobalConfigAdmin", None),
+            ("WithdrawHostTip", None),
+            ("LogUserSwapBalances", None),
+            ("Unknown", None),
+        ];
+        for (name, expected) in cases {
+            let ix = RawInstruction {
+                id: 1,
+                signature: "sig".to_string(),
+                instruction_index: 0,
+                program_id: "p".to_string(),
+                inner_program_id: "p".to_string(),
+                instruction_name: name.to_string(),
+                accounts: None,
+                args: None,
+                slot: 1,
+            };
+            assert_eq!(
+                classify_instruction_envelope(&ix),
+                expected,
+                "mismatch for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_display_event_with_pdas() {
+        let fields = serde_json::json!({
+            "OrderDisplayEvent": {
+                "remaining_input_amount": 0_u64,
+                "filled_output_amount": 11_744_711_u64,
+                "number_of_fills": 1_u64,
+                "status": 1_u8
+            }
+        });
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: Some(vec!["pda1".to_string()]),
+        };
+        let (event_type, correlation, payload) = resolve_event_envelope(&fields, "sig", &ctx)
+            .unwrap()
+            .unwrap();
+        assert_eq!(event_type, EventType::FillCompleted);
+        assert_eq!(
+            correlation,
+            CorrelationOutcome::Correlated(vec!["pda1".to_string()])
+        );
+        let EventPayload::KaminoDisplay {
+            remaining_input_amount,
+            filled_output_amount,
+            terminal_status,
+        } = payload
+        else {
+            panic!("expected KaminoDisplay");
+        };
+        assert_eq!(remaining_input_amount, 0);
+        assert_eq!(filled_output_amount, 11_744_711);
+        assert!(terminal_status.is_some());
+    }
+
+    #[test]
+    fn resolve_display_event_without_pdas() {
+        let fields = serde_json::json!({
+            "OrderDisplayEvent": {
+                "remaining_input_amount": 0_u64,
+                "filled_output_amount": 100_u64,
+                "number_of_fills": 1_u64,
+                "status": 1_u8
+            }
+        });
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: None,
+        };
+        let (_, correlation, payload) = resolve_event_envelope(&fields, "sig", &ctx)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            correlation,
+            CorrelationOutcome::Uncorrelated { .. }
+        ));
+        assert_eq!(payload, EventPayload::None);
+    }
 
     #[test]
     fn flash_take_instructions_are_classified() {
         assert_eq!(
-            classify_instruction("FlashTakeOrderStart"),
+            classify_instruction_envelope(&RawInstruction {
+                id: 1,
+                signature: "s".to_string(),
+                instruction_index: 0,
+                program_id: "p".to_string(),
+                inner_program_id: "p".to_string(),
+                instruction_name: "FlashTakeOrderStart".to_string(),
+                accounts: None,
+                args: None,
+                slot: 1,
+            }),
             Some(EventType::FillInitiated)
         );
         assert_eq!(
-            classify_instruction("FlashTakeOrderEnd"),
+            classify_instruction_envelope(&RawInstruction {
+                id: 1,
+                signature: "s".to_string(),
+                instruction_index: 0,
+                program_id: "p".to_string(),
+                inner_program_id: "p".to_string(),
+                instruction_name: "FlashTakeOrderEnd".to_string(),
+                accounts: None,
+                args: None,
+                slot: 1,
+            }),
             Some(EventType::FillCompleted)
         );
     }
@@ -224,19 +431,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_display_event_reads_status_field() {
-        let fields = serde_json::json!({
-            "remaining_input_amount": 0,
-            "filled_output_amount": 11_744_711,
-            "number_of_fills": 1,
-            "status": 1
-        });
-        let display = parse_order_display_event(&fields).unwrap();
-        assert_eq!(display.remaining_input_amount, 0);
-        assert_eq!(display.status, 1);
-    }
-
-    #[test]
     fn parses_known_display_status_codes() {
         assert_eq!(parse_display_status(0).unwrap(), KaminoDisplayStatus::Open);
         assert_eq!(
@@ -256,5 +450,65 @@ mod tests {
     #[test]
     fn rejects_unknown_display_status_codes() {
         assert!(parse_display_status(99).is_err());
+    }
+
+    #[test]
+    fn unknown_event_returns_none() {
+        let fields = serde_json::json!({"UnknownEvent": {"some_field": 1}});
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: None,
+        };
+        assert!(resolve_event_envelope(&fields, "sig", &ctx).is_none());
+    }
+
+    #[test]
+    fn resolve_user_swap_balances_event() {
+        let fields = serde_json::json!({
+            "UserSwapBalancesEvent": {
+                "some_field": 42
+            }
+        });
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: None,
+        };
+        let (event_type, correlation, payload) = resolve_event_envelope(&fields, "sig", &ctx)
+            .unwrap()
+            .unwrap();
+        assert_eq!(event_type, EventType::FillCompleted);
+        assert_eq!(correlation, CorrelationOutcome::NotRequired);
+        assert_eq!(payload, EventPayload::None);
+    }
+
+    #[test]
+    fn mirror_enums_cover_all_carbon_variants() {
+        let instruction_variants = [
+            "CreateOrder",
+            "TakeOrder",
+            "FlashTakeOrderStart",
+            "FlashTakeOrderEnd",
+            "CloseOrderAndClaimTip",
+            "InitializeGlobalConfig",
+            "InitializeVault",
+            "UpdateGlobalConfig",
+            "UpdateGlobalConfigAdmin",
+            "WithdrawHostTip",
+            "LogUserSwapBalances",
+        ];
+        for name in instruction_variants {
+            let json = serde_json::json!({ name: serde_json::Value::Null });
+            assert!(
+                serde_json::from_value::<KaminoInstructionKind>(json).is_ok(),
+                "KaminoInstructionKind missing variant: {name}"
+            );
+        }
+
+        let event_variants = ["OrderDisplayEvent", "UserSwapBalancesEvent"];
+        for name in event_variants {
+            let json = serde_json::json!({ name: {} });
+            assert!(
+                serde_json::from_value::<KaminoEventEnvelope>(json).is_ok(),
+                "KaminoEventEnvelope missing variant: {name}"
+            );
+        }
     }
 }

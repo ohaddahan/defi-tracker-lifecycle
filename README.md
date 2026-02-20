@@ -75,37 +75,51 @@ flowchart TD
 ```rust
 use defi_tracker_lifecycle::{
     Protocol, adapter_for, ResolveContext,
-    LifecycleEngine, LifecycleTransition,
+    LifecycleEngine, LifecycleTransition, TransitionDecision,
 };
 
 // 1. Identify protocol from program ID
 let protocol = Protocol::from_program_id("DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M");
-
-// 2. Get the adapter
 let adapter = adapter_for(protocol.unwrap());
 
-// 3. Classify a raw event
-let event_type = adapter.classify_event(&raw_event);
-
-// 4. Resolve into correlation + payload
+// 2. Classify + resolve an event in one pass
 let ctx = ResolveContext { pre_fetched_order_pdas: None };
-let (correlation, payload) = adapter.resolve_event(
-    &raw_event, &fields, event_type.unwrap(), &ctx,
-)?;
+let (event_type, correlation, payload) = adapter
+    .classify_and_resolve_event(&raw_event, &ctx)
+    .unwrap()  // None = unknown event
+    .unwrap(); // Err = parse failure
 
-// 5. Check state transition
+// 3. Map EventType to LifecycleTransition (your responsibility)
+let transition = LifecycleTransition::FillDelta;
+
+// 4. Check state transition
 let decision = LifecycleEngine::decide_transition(
     current_status,
-    LifecycleTransition::FillDelta,
+    transition,
 );
+match decision {
+    TransitionDecision::Apply => { /* update order status */ }
+    TransitionDecision::IgnoreTerminalViolation => { /* order is terminal, skip */ }
+}
 ```
 
 ## Testing
 
 ```bash
-cargo test                  # run all 48 tests
+cargo test                  # run all 71 tests (47 unit + 24 integration)
 cargo clippy                # lint check
 ```
+
+### Test Layers
+
+| Layer | What it catches |
+|-------|----------------|
+| Compile-time (`classify_decoded()`) | Upstream Carbon adds a new variant |
+| Mirror enum alignment | Mirror enum drifts from Carbon variants |
+| EventType reachability | A variant becomes dead/unreachable |
+| Unit tests | Individual classify/resolve logic per protocol |
+| Fixture tests | Real JSON from defi-tracker parses and classifies correctly |
+| End-to-end lifecycle | Full pipeline: raw JSON → adapter → state machine → status tracking |
 
 ### Coverage (requires [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov))
 
@@ -114,15 +128,3 @@ cargo llvm-cov                                        # text summary
 cargo llvm-cov --html                                 # HTML report → target/llvm-cov/html/
 cargo llvm-cov --lcov --output-path lcov.info         # LCOV for CI upload
 ```
-
-Current coverage: **~66% lines** (48 tests: 34 unit + 14 integration).
-
-| Module | Line Coverage |
-|--------|-------------|
-| `lifecycle/mod.rs` | 98% |
-| `lifecycle/adapters.rs` | 87% |
-| `protocols/kamino.rs` | 66% |
-| `protocols/limit_v2.rs` | 60% |
-| `protocols/limit_v1.rs` | 60% |
-| `protocols/dca.rs` | 58% |
-| `protocols/mod.rs` | 16% |
