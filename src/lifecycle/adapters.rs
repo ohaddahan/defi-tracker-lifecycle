@@ -1,5 +1,9 @@
 use crate::error::Error;
 use crate::lifecycle::TerminalStatus;
+use crate::protocols::dca::DcaAdapter;
+use crate::protocols::kamino::KaminoAdapter;
+use crate::protocols::limit_v1::LimitV1Adapter;
+use crate::protocols::limit_v2::LimitV2Adapter;
 use crate::protocols::{self, EventType, Protocol};
 use crate::types::{RawEvent, RawInstruction, ResolveContext};
 
@@ -45,98 +49,10 @@ pub trait ProtocolAdapter: Sync {
     ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>>;
 }
 
-#[derive(Debug)]
-pub struct DcaAdapter;
-
-#[derive(Debug)]
-pub struct LimitV1Adapter;
-
-#[derive(Debug)]
-pub struct LimitV2Adapter;
-
-#[derive(Debug)]
-pub struct KaminoAdapter;
-
 static DCA_ADAPTER: DcaAdapter = DcaAdapter;
 static LIMIT_V1_ADAPTER: LimitV1Adapter = LimitV1Adapter;
 static LIMIT_V2_ADAPTER: LimitV2Adapter = LimitV2Adapter;
 static KAMINO_ADAPTER: KaminoAdapter = KaminoAdapter;
-
-impl ProtocolAdapter for DcaAdapter {
-    fn protocol(&self) -> Protocol {
-        Protocol::Dca
-    }
-
-    fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        protocols::dca::classify_instruction_envelope(ix)
-    }
-
-    fn classify_and_resolve_event(
-        &self,
-        ev: &RawEvent,
-        _ctx: &ResolveContext,
-    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
-        let fields = ev.fields.as_ref()?;
-        protocols::dca::resolve_event_envelope(fields)
-    }
-}
-
-impl ProtocolAdapter for LimitV1Adapter {
-    fn protocol(&self) -> Protocol {
-        Protocol::LimitV1
-    }
-
-    fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        protocols::limit_v1::classify_instruction_envelope(ix)
-    }
-
-    fn classify_and_resolve_event(
-        &self,
-        ev: &RawEvent,
-        _ctx: &ResolveContext,
-    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
-        let fields = ev.fields.as_ref()?;
-        protocols::limit_v1::resolve_event_envelope(fields)
-    }
-}
-
-impl ProtocolAdapter for LimitV2Adapter {
-    fn protocol(&self) -> Protocol {
-        Protocol::LimitV2
-    }
-
-    fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        protocols::limit_v2::classify_instruction_envelope(ix)
-    }
-
-    fn classify_and_resolve_event(
-        &self,
-        ev: &RawEvent,
-        _ctx: &ResolveContext,
-    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
-        let fields = ev.fields.as_ref()?;
-        protocols::limit_v2::resolve_event_envelope(fields)
-    }
-}
-
-impl ProtocolAdapter for KaminoAdapter {
-    fn protocol(&self) -> Protocol {
-        Protocol::Kamino
-    }
-
-    fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        protocols::kamino::classify_instruction_envelope(ix)
-    }
-
-    fn classify_and_resolve_event(
-        &self,
-        ev: &RawEvent,
-        ctx: &ResolveContext,
-    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
-        let fields = ev.fields.as_ref()?;
-        protocols::kamino::resolve_event_envelope(fields, &ev.signature, ctx)
-    }
-}
 
 pub fn dca_closed_terminal_status(closed: &protocols::dca::DcaClosedEvent) -> TerminalStatus {
     if closed.user_closed {

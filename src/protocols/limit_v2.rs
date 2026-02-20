@@ -1,10 +1,10 @@
 use crate::error::Error;
-use crate::lifecycle::adapters::{CorrelationOutcome, EventPayload};
+use crate::lifecycle::adapters::{CorrelationOutcome, EventPayload, ProtocolAdapter};
 use crate::protocols::{
-    AccountInfo, EventType, checked_u16_to_i16, checked_u64_to_i64, contains_known_variant,
-    find_account_by_name,
+    AccountInfo, EventType, Protocol, checked_u16_to_i16, checked_u64_to_i64,
+    contains_known_variant, find_account_by_name,
 };
-use crate::types::RawInstruction;
+use crate::types::{RawEvent, RawInstruction, ResolveContext};
 use strum::VariantNames;
 
 #[derive(serde::Deserialize, strum_macros::VariantNames)]
@@ -22,6 +22,28 @@ pub enum LimitV2InstructionKind {
     CancelOrder(serde_json::Value),
     UpdateFee(serde_json::Value),
     WithdrawFee(serde_json::Value),
+}
+
+#[derive(Debug)]
+pub struct LimitV2Adapter;
+
+impl ProtocolAdapter for LimitV2Adapter {
+    fn protocol(&self) -> Protocol {
+        Protocol::LimitV2
+    }
+
+    fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
+        classify_instruction_envelope(ix)
+    }
+
+    fn classify_and_resolve_event(
+        &self,
+        ev: &RawEvent,
+        _ctx: &ResolveContext,
+    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
+        let fields = ev.fields.as_ref()?;
+        resolve_event_envelope(fields)
+    }
 }
 
 pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
