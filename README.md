@@ -16,45 +16,44 @@ Pure-logic crate for DeFi order lifecycle tracking on Solana. No IO, no database
 ### Event Processing Pipeline
 
 ```mermaid
-flowchart LR
-    Raw["RawInstruction / RawEvent"] --> Lookup["Protocol::from_program_id()"]
-    Lookup --> Adapter["adapter_for(protocol)"]
-    Adapter --> Classify["classify_instruction()\nclassify_event()"]
-    Classify --> ET["EventType"]
-    ET --> Resolve["resolve_event()"]
-    Resolve --> Out["(CorrelationOutcome, EventPayload)"]
+flowchart TD
+    subgraph Input
+        Raw["RawInstruction / RawEvent"]
+    end
+    subgraph Dispatch
+        Lookup["from_program_id()"] --> Adapter["adapter_for()"]
+    end
+    subgraph Classify
+        CI["classify_instruction()"]
+        CE["classify_and_resolve_event()"]
+    end
+    subgraph Output
+        ET["EventType"]
+        CO["CorrelationOutcome"]
+        EP["EventPayload"]
+    end
+
+    Raw --> Lookup
+    Adapter --> CI & CE
+    CI --> ET
+    CE --> ET & CO & EP
 ```
 
 ### Order Lifecycle State Machine
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Active : Create
-    Active --> Active : FillDelta
-    Active --> Active : MetadataOnly
-    Active --> Completed : Close(Completed)
-    Active --> Cancelled : Close(Cancelled)
-    Active --> Expired : Close(Expired)
-
-    Completed --> Completed : MetadataOnly
-    Cancelled --> Cancelled : MetadataOnly
-    Expired --> Expired : MetadataOnly
-
-    note right of Completed : Terminal — rejects\nCreate, FillDelta, Close
-    note right of Cancelled : Terminal
-    note right of Expired : Terminal
-```
-
-### Protocol Adapter Selection
-
-```mermaid
 flowchart TD
-    PID["program_id"] --> Match{"Protocol::from_program_id()"}
-    Match -->|DCA265...| DCA["DcaAdapter"]
-    Match -->|jupoNj...| LV1["LimitV1Adapter"]
-    Match -->|j1o2qR...| LV2["LimitV2Adapter"]
-    Match -->|LiMoM9...| KAM["KaminoAdapter"]
-    Match -->|unknown| None["None"]
+    Start(( )) -->|Create| Active
+    Active -->|FillDelta / MetadataOnly| Active
+    Active -->|"Close(Completed)"| Completed
+    Active -->|"Close(Cancelled)"| Cancelled
+    Active -->|"Close(Expired)"| Expired
+
+    subgraph Terminal ["Terminal — only MetadataOnly accepted"]
+        Completed
+        Cancelled
+        Expired
+    end
 ```
 
 ## Core Concepts
@@ -108,7 +107,7 @@ match decision {
 ## Testing
 
 ```bash
-cargo test                  # run all 92 tests (65 unit + 27 integration)
+cargo test                  # run all 137 tests (110 unit + 27 integration)
 cargo clippy                # lint check
 ```
 
