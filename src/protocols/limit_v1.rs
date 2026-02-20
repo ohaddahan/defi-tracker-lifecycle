@@ -4,6 +4,7 @@ use crate::protocols::{AccountInfo, EventType, Protocol, ProtocolHelpers};
 use crate::types::{RawEvent, RawInstruction, ResolveContext};
 use strum::VariantNames;
 
+/// Serde-tagged envelope for Jupiter Limit Order v1 event variants.
 #[derive(serde::Deserialize, strum_macros::VariantNames)]
 pub enum LimitV1EventEnvelope {
     CreateOrderEvent(OrderKeyHolder),
@@ -11,6 +12,7 @@ pub enum LimitV1EventEnvelope {
     TradeEvent(TradeEventFields),
 }
 
+/// Serde-tagged envelope for Jupiter Limit Order v1 instruction variants.
 #[derive(serde::Deserialize)]
 pub enum LimitV1InstructionKind {
     InitializeOrder(serde_json::Value),
@@ -24,14 +26,19 @@ pub enum LimitV1InstructionKind {
     UpdateFee(serde_json::Value),
 }
 
+/// Jupiter Limit Order v1 protocol adapter (zero-sized, stored as a static).
 #[derive(Debug)]
 pub struct LimitV1Adapter;
 
+/// Serde intermediate for events that only carry an `order_key`.
 #[derive(serde::Deserialize)]
 pub struct OrderKeyHolder {
     order_key: String,
 }
 
+/// Serde intermediate for `TradeEvent` payload fields.
+///
+/// Uses `serde(alias)` to accept both V1 (`in_amount`) and V2 (`making_amount`) field names.
 #[derive(serde::Deserialize)]
 pub struct TradeEventFields {
     order_key: String,
@@ -48,6 +55,7 @@ pub struct TradeEventFields {
     remaining_out_amount: u64,
 }
 
+/// Extracted Limit v1 trade event with checked-cast amounts.
 pub struct LimitTradeEvent {
     pub order_pda: String,
     pub taker: String,
@@ -57,12 +65,14 @@ pub struct LimitTradeEvent {
     pub remaining_out_amount: i64,
 }
 
+/// Parsed arguments from an `InitializeOrder` instruction (Limit v1).
 pub struct LimitV1CreateArgs {
     pub making_amount: i64,
     pub taking_amount: i64,
     pub expired_at: Option<i64>,
 }
 
+/// Input and output mint addresses extracted from a Limit v1 create instruction.
 pub struct LimitV1CreateMints {
     pub input_mint: String,
     pub output_mint: String,
@@ -162,6 +172,9 @@ impl LimitV1Adapter {
         }
     }
 
+    /// Extracts the order PDA from instruction accounts.
+    ///
+    /// Prefers the named `"order"` account; falls back to positional index per instruction variant.
     pub fn extract_order_pda(
         accounts: &[AccountInfo],
         instruction_name: &str,
@@ -202,6 +215,9 @@ impl LimitV1Adapter {
             })
     }
 
+    /// Extracts input/output mint addresses from a Limit v1 create instruction's accounts.
+    ///
+    /// Prefers named accounts; falls back to positional indexes 5 (input) and 8 (output).
     pub fn extract_create_mints(accounts: &[AccountInfo]) -> Result<LimitV1CreateMints, Error> {
         let by_name_input =
             ProtocolHelpers::find_account_by_name(accounts, "input_mint").map(|a| a.pubkey.clone());
@@ -236,6 +252,7 @@ impl LimitV1Adapter {
         })
     }
 
+    /// Parses `InitializeOrder` instruction args into checked [`LimitV1CreateArgs`].
     pub fn parse_create_args(args: &serde_json::Value) -> Result<LimitV1CreateArgs, Error> {
         let InitializeOrderFields {
             making_amount,

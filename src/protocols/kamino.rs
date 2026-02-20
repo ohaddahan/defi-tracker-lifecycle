@@ -6,12 +6,14 @@ use crate::protocols::{AccountInfo, EventType, Protocol, ProtocolHelpers};
 use crate::types::{RawEvent, RawInstruction, ResolveContext};
 use strum::VariantNames;
 
+/// Serde-tagged envelope for Kamino Limit Order event variants.
 #[derive(serde::Deserialize, strum_macros::VariantNames)]
 pub enum KaminoEventEnvelope {
     OrderDisplayEvent(OrderDisplayEventFields),
     UserSwapBalancesEvent(serde_json::Value),
 }
 
+/// Serde-tagged envelope for Kamino Limit Order instruction variants.
 #[derive(serde::Deserialize)]
 pub enum KaminoInstructionKind {
     CreateOrder(serde_json::Value),
@@ -27,9 +29,13 @@ pub enum KaminoInstructionKind {
     LogUserSwapBalances(serde_json::Value),
 }
 
+/// Kamino Limit Order protocol adapter (zero-sized, stored as a static).
 #[derive(Debug)]
 pub struct KaminoAdapter;
 
+/// Serde intermediate for `OrderDisplayEvent` fields.
+///
+/// This event carries no order PDA — correlation requires [`ResolveContext::pre_fetched_order_pdas`].
 #[derive(serde::Deserialize)]
 pub struct OrderDisplayEventFields {
     #[serde(default)]
@@ -42,6 +48,7 @@ pub struct OrderDisplayEventFields {
     pub status: u8,
 }
 
+/// Extracted Kamino order display event with checked-cast amounts.
 pub struct KaminoOrderDisplayEvent {
     pub remaining_input_amount: i64,
     pub filled_output_amount: i64,
@@ -49,20 +56,27 @@ pub struct KaminoOrderDisplayEvent {
     pub status: i64,
 }
 
+/// Kamino order status as decoded from the `status` field of `OrderDisplayEvent`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KaminoDisplayStatus {
+    /// Order is still active (status code 0).
     Open,
+    /// Order was fully filled (status code 1).
     Filled,
+    /// Order was cancelled (status code 2).
     Cancelled,
+    /// Order expired (status code 3).
     Expired,
 }
 
+/// Parsed arguments from a Kamino `CreateOrder` instruction.
 pub struct KaminoCreateArgs {
     pub input_amount: i64,
     pub output_amount: i64,
     pub order_type: i16,
 }
 
+/// Input and output mint addresses extracted from a Kamino create instruction.
 pub struct KaminoCreateMints {
     pub input_mint: String,
     pub output_mint: String,
@@ -169,6 +183,9 @@ impl KaminoAdapter {
         }
     }
 
+    /// Extracts the order PDA from instruction accounts.
+    ///
+    /// Prefers the named `"order"` account; falls back to positional index per instruction variant.
     pub fn extract_order_pda(
         accounts: &[AccountInfo],
         instruction_name: &str,
@@ -209,6 +226,9 @@ impl KaminoAdapter {
             })
     }
 
+    /// Extracts input/output mint addresses from a Kamino create instruction's accounts.
+    ///
+    /// Prefers named accounts; falls back to positional indexes 4 (input) and 5 (output).
     pub fn extract_create_mints(accounts: &[AccountInfo]) -> Result<KaminoCreateMints, Error> {
         let by_name_input =
             ProtocolHelpers::find_account_by_name(accounts, "input_mint").map(|a| a.pubkey.clone());
@@ -243,6 +263,7 @@ impl KaminoAdapter {
         })
     }
 
+    /// Parses `CreateOrder` instruction args into checked [`KaminoCreateArgs`].
     pub fn parse_create_args(args: &serde_json::Value) -> Result<KaminoCreateArgs, Error> {
         let CreateOrderFields {
             input_amount,
@@ -259,6 +280,7 @@ impl KaminoAdapter {
         })
     }
 
+    /// Converts a numeric status code to a [`KaminoDisplayStatus`].
     pub fn parse_display_status(status: i64) -> Result<KaminoDisplayStatus, Error> {
         match status {
             0 => Ok(KaminoDisplayStatus::Open),

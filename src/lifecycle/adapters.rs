@@ -7,29 +7,36 @@ use crate::protocols::limit_v2::LimitV2Adapter;
 use crate::protocols::{self, EventType, Protocol};
 use crate::types::{RawEvent, RawInstruction, ResolveContext};
 
+/// Whether (and how) an event was correlated to an order PDA.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CorrelationOutcome {
+    /// Correlation is not meaningful for this event type
+    /// (e.g. Kamino `UserSwapBalancesEvent` is diagnostic-only).
     NotRequired,
+    /// Event was successfully matched to one or more order PDAs.
     Correlated(Vec<String>),
+    /// Event is the kind that *should* correlate, but context was missing
+    /// (e.g. Kamino `OrderDisplayEvent` without pre-fetched PDAs).
     Uncorrelated { reason: String },
 }
 
+/// Protocol-specific data extracted from a resolved event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EventPayload {
+    /// No extra payload beyond the event type itself.
     None,
-    DcaFill {
-        in_amount: i64,
-        out_amount: i64,
-    },
-    DcaClosed {
-        status: TerminalStatus,
-    },
+    /// Jupiter DCA fill amounts.
+    DcaFill { in_amount: i64, out_amount: i64 },
+    /// Jupiter DCA closed event with derived terminal status.
+    DcaClosed { status: TerminalStatus },
+    /// Jupiter Limit Order fill amounts (shared by V1 and V2).
     LimitFill {
         in_amount: i64,
         out_amount: i64,
         remaining_in_amount: i64,
         counterparty: String,
     },
+    /// Kamino order display snapshot with optional terminal status.
     KaminoDisplay {
         remaining_input_amount: i64,
         filled_output_amount: i64,
@@ -37,11 +44,17 @@ pub enum EventPayload {
     },
 }
 
+/// Stateless adapter for classifying instructions and resolving events for a single protocol.
 pub trait ProtocolAdapter: Sync {
+    /// Which protocol this adapter handles.
     fn protocol(&self) -> Protocol;
 
+    /// Classifies a raw instruction into an [`EventType`], or `None` if unrecognised/irrelevant.
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType>;
 
+    /// Classifies and resolves a raw event into an `(EventType, CorrelationOutcome, EventPayload)`.
+    ///
+    /// Returns `None` when `fields` is absent or the event name is unknown to this protocol.
     fn classify_and_resolve_event(
         &self,
         ev: &RawEvent,
@@ -49,6 +62,9 @@ pub trait ProtocolAdapter: Sync {
     ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>>;
 }
 
+/// Derives a [`TerminalStatus`] from a DCA `ClosedEvent` payload.
+///
+/// Priority: `user_closed` → Cancelled, `unfilled_amount == 0` → Completed, else → Expired.
 pub fn dca_closed_terminal_status(closed: &protocols::dca::DcaClosedEvent) -> TerminalStatus {
     if closed.user_closed {
         TerminalStatus::Cancelled
@@ -59,6 +75,9 @@ pub fn dca_closed_terminal_status(closed: &protocols::dca::DcaClosedEvent) -> Te
     }
 }
 
+/// Converts a Kamino display status code into an optional [`TerminalStatus`].
+///
+/// Code 0 (Open) → `None`; codes 1–3 map to Completed/Cancelled/Expired.
 pub fn kamino_display_terminal_status(status_code: i64) -> Result<Option<TerminalStatus>, Error> {
     let status = protocols::kamino::KaminoAdapter::parse_display_status(status_code)?;
     match status {
@@ -69,6 +88,7 @@ pub fn kamino_display_terminal_status(status_code: i64) -> Result<Option<Termina
     }
 }
 
+/// Returns the static [`ProtocolAdapter`] for the given protocol.
 pub fn adapter_for(protocol: Protocol) -> &'static dyn ProtocolAdapter {
     match protocol {
         Protocol::Dca => &DcaAdapter,

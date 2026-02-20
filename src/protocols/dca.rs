@@ -6,6 +6,9 @@ use crate::protocols::{AccountInfo, EventType, Protocol, ProtocolHelpers};
 use crate::types::{RawEvent, RawInstruction, ResolveContext};
 use strum::VariantNames;
 
+/// Serde-tagged envelope for Jupiter DCA event variants.
+///
+/// Variant names mirror the Carbon decoder crate exactly.
 #[derive(serde::Deserialize, strum_macros::VariantNames)]
 pub enum DcaEventEnvelope {
     OpenedEvent(DcaKeyHolder),
@@ -16,6 +19,9 @@ pub enum DcaEventEnvelope {
     DepositEvent(DcaKeyHolder),
 }
 
+/// Serde-tagged envelope for Jupiter DCA instruction variants.
+///
+/// Inner `Value` is unused at runtime — serde consumes it during deserialization.
 #[derive(serde::Deserialize)]
 pub enum DcaInstructionKind {
     OpenDca(serde_json::Value),
@@ -32,9 +38,11 @@ pub enum DcaInstructionKind {
     WithdrawFees(serde_json::Value),
 }
 
+/// Jupiter DCA protocol adapter (zero-sized, stored as a static).
 #[derive(Debug)]
 pub struct DcaAdapter;
 
+/// Serde intermediate for `FilledEvent` payload fields.
 #[derive(serde::Deserialize)]
 pub struct FilledEventFields {
     dca_key: String,
@@ -42,6 +50,7 @@ pub struct FilledEventFields {
     out_amount: u64,
 }
 
+/// Serde intermediate for `ClosedEvent` payload fields.
 #[derive(serde::Deserialize)]
 pub struct ClosedEventFields {
     dca_key: String,
@@ -49,23 +58,27 @@ pub struct ClosedEventFields {
     unfilled_amount: u64,
 }
 
+/// Serde intermediate for events that only carry a `dca_key`.
 #[derive(serde::Deserialize)]
 pub struct DcaKeyHolder {
     dca_key: String,
 }
 
+/// Extracted DCA close event with checked-cast amounts.
 pub struct DcaClosedEvent {
     pub order_pda: String,
     pub user_closed: bool,
     pub unfilled_amount: i64,
 }
 
+/// Extracted DCA fill event with checked-cast amounts.
 pub struct DcaFillEvent {
     pub order_pda: String,
     pub in_amount: i64,
     pub out_amount: i64,
 }
 
+/// Parsed arguments from an `OpenDca`/`OpenDcaV2` instruction.
 pub struct DcaCreateArgs {
     pub in_amount: i64,
     pub in_amount_per_cycle: i64,
@@ -75,6 +88,7 @@ pub struct DcaCreateArgs {
     pub start_at: Option<i64>,
 }
 
+/// Input and output mint addresses extracted from a DCA create instruction.
 pub struct DcaCreateMints {
     pub input_mint: String,
     pub output_mint: String,
@@ -200,6 +214,9 @@ impl DcaAdapter {
         }
     }
 
+    /// Extracts the order PDA from instruction accounts.
+    ///
+    /// Prefers the named `"dca"` account; falls back to positional index per instruction variant.
     pub fn extract_order_pda(
         accounts: &[AccountInfo],
         instruction_name: &str,
@@ -239,6 +256,9 @@ impl DcaAdapter {
             })
     }
 
+    /// Extracts input/output mint addresses from a DCA create instruction's accounts.
+    ///
+    /// Prefers named accounts; falls back to positional indexes that differ between `OpenDca` and `OpenDcaV2`.
     pub fn extract_create_mints(
         accounts: &[AccountInfo],
         instruction_name: &str,
@@ -290,6 +310,7 @@ impl DcaAdapter {
         })
     }
 
+    /// Parses `OpenDca`/`OpenDcaV2` instruction args into checked [`DcaCreateArgs`].
     pub fn parse_create_args(args: &serde_json::Value) -> Result<DcaCreateArgs, Error> {
         let OpenDcaFields {
             in_amount,

@@ -8,18 +8,24 @@ use solana_pubkey::Pubkey;
 
 use crate::error::Error;
 
+/// Supported DeFi protocols.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, strum_macros::Display, strum_macros::AsRefStr,
 )]
 #[strum(serialize_all = "snake_case")]
 pub enum Protocol {
+    /// Jupiter Dollar-Cost Averaging.
     Dca,
+    /// Jupiter Limit Order v1.
     LimitV1,
+    /// Jupiter Limit Order v2.
     LimitV2,
+    /// Kamino Limit Order.
     Kamino,
 }
 
 impl Protocol {
+    /// Resolves a base58 program id string to its [`Protocol`], or `None` if unrecognised.
     pub fn from_program_id(program_id: &str) -> Option<Self> {
         let key: Pubkey = program_id.parse().ok()?;
         match key {
@@ -31,6 +37,7 @@ impl Protocol {
         }
     }
 
+    /// Returns the on-chain program id for every supported protocol.
     pub fn all_program_ids() -> [Pubkey; 4] {
         [
             carbon_jupiter_dca_decoder::PROGRAM_ID,
@@ -41,39 +48,57 @@ impl Protocol {
     }
 }
 
+/// Canonical event classification shared across all protocols.
 #[derive(Debug, Clone, PartialEq, Eq, strum_macros::Display, strum_macros::AsRefStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum EventType {
+    /// Order was created on-chain.
     Created,
+    /// A fill was initiated (e.g. flash-fill start).
     FillInitiated,
+    /// A fill was completed (partial or full).
     FillCompleted,
+    /// Order was explicitly cancelled.
     Cancelled,
+    /// Order expired without completing.
     Expired,
+    /// Order reached a terminal close (protocol-level).
     Closed,
+    /// Protocol fee was collected.
     FeeCollected,
+    /// Funds were withdrawn from the order.
     Withdrawn,
+    /// Funds were deposited into the order.
     Deposited,
 }
 
+/// A single account entry from a decoded instruction's account list.
 #[derive(Debug, Deserialize)]
 pub struct AccountInfo {
+    /// Base58-encoded account public key.
     pub pubkey: String,
+    /// Whether this account signed the transaction.
     #[serde(default)]
     pub is_signer: bool,
+    /// Whether this account was marked writable.
     #[serde(default)]
     pub is_writable: bool,
+    /// Optional IDL-derived account name (e.g. `"dca"`, `"order"`).
     pub name: Option<String>,
 }
 
+/// Shared stateless helpers used across all protocol adapters.
 pub struct ProtocolHelpers;
 
 impl ProtocolHelpers {
+    /// Deserializes a JSON array of accounts into [`AccountInfo`] structs.
     pub fn parse_accounts(accounts_json: &serde_json::Value) -> Result<Vec<AccountInfo>, Error> {
         serde_json::from_value(accounts_json.clone()).map_err(|e| Error::Protocol {
             reason: format!("failed to parse accounts: {e}"),
         })
     }
 
+    /// Returns the pubkey of the first signer in the account list.
     pub fn find_signer(accounts: &[AccountInfo]) -> Option<&str> {
         accounts
             .iter()
@@ -81,6 +106,7 @@ impl ProtocolHelpers {
             .map(|a| a.pubkey.as_str())
     }
 
+    /// Finds an account by its IDL-derived name.
     pub fn find_account_by_name<'a>(
         accounts: &'a [AccountInfo],
         name: &str,
@@ -88,18 +114,21 @@ impl ProtocolHelpers {
         accounts.iter().find(|a| a.name.as_deref() == Some(name))
     }
 
+    /// Returns `true` if the JSON object's keys contain any of the `known_names`.
     pub fn contains_known_variant(fields: &serde_json::Value, known_names: &[&str]) -> bool {
         fields
             .as_object()
             .is_some_and(|obj| obj.keys().any(|name| known_names.contains(&name.as_str())))
     }
 
+    /// Converts `u64` to `i64`, returning an error if the value exceeds `i64::MAX`.
     pub fn checked_u64_to_i64(value: u64, field: &str) -> Result<i64, Error> {
         i64::try_from(value).map_err(|_| Error::Protocol {
             reason: format!("{field} exceeds i64::MAX: {value}"),
         })
     }
 
+    /// Converts `u16` to `i16`, returning an error if the value exceeds `i16::MAX`.
     pub fn checked_u16_to_i16(value: u16, field: &str) -> Result<i16, Error> {
         i16::try_from(value).map_err(|_| Error::Protocol {
             reason: format!("{field} exceeds i16::MAX: {value}"),

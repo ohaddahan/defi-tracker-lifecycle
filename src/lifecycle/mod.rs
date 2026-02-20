@@ -1,5 +1,6 @@
 pub mod adapters;
 
+/// Terminal state of a DeFi order lifecycle.
 #[derive(
     Debug,
     Clone,
@@ -12,34 +13,57 @@ pub mod adapters;
 )]
 #[strum(serialize_all = "lowercase")]
 pub enum TerminalStatus {
+    /// All fills executed — order fully satisfied.
     Completed,
+    /// User or protocol explicitly cancelled the order.
     Cancelled,
+    /// Order reached its expiration time without completing.
     Expired,
 }
 
+/// A state-mutating action the consumer wants to apply to an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifecycleTransition {
+    /// Order was created on-chain.
     Create,
+    /// An incremental fill occurred (partial or full).
     FillDelta,
+    /// Order reached a terminal state.
     Close { status: TerminalStatus },
+    /// Non-state-mutating update (e.g. diagnostic events, display snapshots).
+    /// Always accepted, even after the order is terminal.
     MetadataOnly,
 }
 
+/// Result of [`LifecycleEngine::decide_transition`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionDecision {
+    /// Transition is valid — the consumer should apply it.
     Apply,
+    /// Order is already terminal; this state-mutating transition is rejected.
     IgnoreTerminalViolation,
 }
 
+/// The result of converting a cumulative snapshot into an incremental delta.
+///
+/// `delta` is always `>= 0`. If the snapshot regressed (new total < stored total),
+/// `delta` is clamped to 0 and `regression` is set to `true`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SnapshotDelta {
+    /// Non-negative increment to add to the stored total.
     pub delta: i64,
+    /// `true` when the snapshot total was less than the stored total.
     pub regression: bool,
 }
 
+/// Stateless decision engine for order lifecycle state machines.
 pub struct LifecycleEngine;
 
 impl LifecycleEngine {
+    /// Decides whether `transition` should be applied given the order's current terminal state.
+    ///
+    /// Non-terminal orders (`None`) accept all transitions.
+    /// Terminal orders only accept [`LifecycleTransition::MetadataOnly`].
     pub fn decide_transition(
         current_terminal: Option<TerminalStatus>,
         transition: LifecycleTransition,
@@ -56,6 +80,9 @@ impl LifecycleEngine {
         }
     }
 
+    /// Converts a cumulative snapshot into a non-negative delta relative to `stored_total`.
+    ///
+    /// If the snapshot regressed, delta is clamped to 0 and `regression` is flagged.
     pub fn normalize_snapshot_to_delta(stored_total: i64, snapshot_total: i64) -> SnapshotDelta {
         let delta = snapshot_total.saturating_sub(stored_total).max(0);
         SnapshotDelta {
