@@ -3,7 +3,7 @@ pub mod kamino;
 pub mod limit_v1;
 pub mod limit_v2;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
 
 use crate::error::Error;
@@ -55,45 +55,20 @@ pub enum EventType {
     Deposited,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct AccountInfo {
     pub pubkey: String,
+    #[serde(default)]
     pub is_signer: bool,
+    #[serde(default)]
     pub is_writable: bool,
     pub name: Option<String>,
 }
 
 pub fn parse_accounts(accounts_json: &serde_json::Value) -> Result<Vec<AccountInfo>, Error> {
-    let arr = accounts_json.as_array().ok_or_else(|| Error::Protocol {
-        reason: "accounts is not an array".into(),
-    })?;
-
-    let mut result = Vec::with_capacity(arr.len());
-    for item in arr {
-        let pubkey = item
-            .get("pubkey")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::Protocol {
-                reason: "account missing pubkey".into(),
-            })?
-            .to_string();
-        let is_signer = item
-            .get("is_signer")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let is_writable = item
-            .get("is_writable")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let name = item.get("name").and_then(|v| v.as_str()).map(String::from);
-        result.push(AccountInfo {
-            pubkey,
-            is_signer,
-            is_writable,
-            name,
-        });
-    }
-    Ok(result)
+    serde_json::from_value(accounts_json.clone()).map_err(|e| Error::Protocol {
+        reason: format!("failed to parse accounts: {e}"),
+    })
 }
 
 pub fn find_signer(accounts: &[AccountInfo]) -> Option<&str> {
@@ -238,7 +213,7 @@ mod tests {
         let Error::Protocol { reason } = err else {
             panic!("expected protocol error");
         };
-        assert_eq!(reason, "accounts is not an array");
+        assert!(reason.contains("failed to parse accounts"), "{reason}");
     }
 
     #[test]
@@ -247,7 +222,7 @@ mod tests {
         let Error::Protocol { reason } = err else {
             panic!("expected protocol error");
         };
-        assert_eq!(reason, "account missing pubkey");
+        assert!(reason.contains("failed to parse accounts"), "{reason}");
     }
 
     #[test]
