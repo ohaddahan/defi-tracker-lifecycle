@@ -36,7 +36,20 @@ impl ProtocolAdapter for LimitV1Adapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        classify_instruction_envelope(ix)
+        let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
+        let kind: LimitV1InstructionKind = serde_json::from_value(wrapper).ok()?;
+        match kind {
+            LimitV1InstructionKind::InitializeOrder(_) => Some(EventType::Created),
+            LimitV1InstructionKind::PreFlashFillOrder(_) => Some(EventType::FillInitiated),
+            LimitV1InstructionKind::FillOrder(_) | LimitV1InstructionKind::FlashFillOrder(_) => {
+                Some(EventType::FillCompleted)
+            }
+            LimitV1InstructionKind::CancelOrder(_) => Some(EventType::Cancelled),
+            LimitV1InstructionKind::CancelExpiredOrder(_) => Some(EventType::Expired),
+            LimitV1InstructionKind::WithdrawFee(_)
+            | LimitV1InstructionKind::InitFee(_)
+            | LimitV1InstructionKind::UpdateFee(_) => None,
+        }
     }
 
     fn classify_and_resolve_event(
@@ -45,43 +58,20 @@ impl ProtocolAdapter for LimitV1Adapter {
         _ctx: &ResolveContext,
     ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
         let fields = ev.fields.as_ref()?;
-        resolve_event_envelope(fields)
-    }
-}
-
-pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
-    let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
-    let kind: LimitV1InstructionKind = serde_json::from_value(wrapper).ok()?;
-    match kind {
-        LimitV1InstructionKind::InitializeOrder(_) => Some(EventType::Created),
-        LimitV1InstructionKind::PreFlashFillOrder(_) => Some(EventType::FillInitiated),
-        LimitV1InstructionKind::FillOrder(_) | LimitV1InstructionKind::FlashFillOrder(_) => {
-            Some(EventType::FillCompleted)
-        }
-        LimitV1InstructionKind::CancelOrder(_) => Some(EventType::Cancelled),
-        LimitV1InstructionKind::CancelExpiredOrder(_) => Some(EventType::Expired),
-        LimitV1InstructionKind::WithdrawFee(_)
-        | LimitV1InstructionKind::InitFee(_)
-        | LimitV1InstructionKind::UpdateFee(_) => None,
-    }
-}
-
-pub fn resolve_event_envelope(
-    fields: &serde_json::Value,
-) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
-    let envelope: LimitV1EventEnvelope = match serde_json::from_value(fields.clone()) {
-        Ok(e) => e,
-        Err(err) => {
-            if !contains_known_variant(fields, LimitV1EventEnvelope::VARIANTS) {
-                return None;
+        let envelope: LimitV1EventEnvelope = match serde_json::from_value(fields.clone()) {
+            Ok(e) => e,
+            Err(err) => {
+                if !contains_known_variant(fields, LimitV1EventEnvelope::VARIANTS) {
+                    return None;
+                }
+                return Some(Err(Error::Protocol {
+                    reason: format!("failed to parse Limit v1 event payload: {err}"),
+                }));
             }
-            return Some(Err(Error::Protocol {
-                reason: format!("failed to parse Limit v1 event payload: {err}"),
-            }));
-        }
-    };
+        };
 
-    Some(resolve_limit_v1_event(envelope))
+        Some(resolve_limit_v1_event(envelope))
+    }
 }
 
 fn resolve_limit_v1_event(
@@ -291,6 +281,29 @@ mod tests {
         }
     }
 
+    fn make_event(fields: serde_json::Value) -> RawEvent {
+        RawEvent {
+            id: 1,
+            signature: "sig".to_string(),
+            event_index: 0,
+            program_id: "p".to_string(),
+            inner_program_id: "p".to_string(),
+            event_name: "test".to_string(),
+            fields: Some(fields),
+            slot: 1,
+        }
+    }
+
+    fn resolve(
+        fields: serde_json::Value,
+    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), crate::error::Error>> {
+        let ev = make_event(fields);
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: None,
+        };
+        LimitV1Adapter.classify_and_resolve_event(&ev, &ctx)
+    }
+
     #[test]
     fn classify_known_instructions_via_envelope() {
         let cases = [
@@ -318,7 +331,7 @@ mod tests {
                 slot: 1,
             };
             assert_eq!(
-                classify_instruction_envelope(&ix),
+                LimitV1Adapter.classify_instruction(&ix),
                 expected,
                 "mismatch for {name}"
             );
@@ -337,7 +350,7 @@ mod tests {
                 "remaining_taking_amount": 6_374_023_074_u64
             }
         });
-        let (event_type, correlation, payload) = resolve_event_envelope(&fields).unwrap().unwrap();
+        let (event_type, correlation, payload) = resolve(fields).unwrap().unwrap();
         assert_eq!(event_type, EventType::FillCompleted);
         let CorrelationOutcome::Correlated(pdas) = correlation else {
             panic!("expected Correlated");
@@ -365,7 +378,7 @@ mod tests {
                 "order_key": "ABC123"
             }
         });
-        let (event_type, correlation, payload) = resolve_event_envelope(&fields).unwrap().unwrap();
+        let (event_type, correlation, payload) = resolve(fields).unwrap().unwrap();
         assert_eq!(event_type, EventType::Created);
         assert_eq!(
             correlation,
@@ -377,7 +390,7 @@ mod tests {
     #[test]
     fn unknown_event_returns_none() {
         let fields = serde_json::json!({"UnknownEvent": {"some_field": 1}});
-        assert!(resolve_event_envelope(&fields).is_none());
+        assert!(resolve(fields).is_none());
     }
 
     #[test]
@@ -391,7 +404,7 @@ mod tests {
                 "remaining_out_amount": 0_u64
             }
         });
-        let result = resolve_event_envelope(&fields).unwrap();
+        let result = resolve(fields).unwrap();
         assert!(result.is_err());
     }
 
@@ -406,7 +419,7 @@ mod tests {
                 "remaining_out_amount": 0_u64
             }
         });
-        let result = resolve_event_envelope(&fields).unwrap();
+        let result = resolve(fields).unwrap();
         assert!(result.is_err());
     }
 
@@ -421,7 +434,7 @@ mod tests {
                 "remaining_out_amount": 0_u64
             }
         });
-        let (_, _, payload) = resolve_event_envelope(&fields).unwrap().unwrap();
+        let (_, _, payload) = resolve(fields).unwrap().unwrap();
         let EventPayload::LimitFill { counterparty, .. } = payload else {
             panic!("expected LimitFill");
         };

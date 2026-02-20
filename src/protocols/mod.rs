@@ -107,7 +107,8 @@ pub fn checked_u16_to_i16(value: u16, field: &str) -> Result<i16, Error> {
 #[expect(clippy::unwrap_used, reason = "test assertions")]
 mod tests {
     use super::*;
-    use crate::types::RawInstruction;
+    use crate::lifecycle::adapters::{ProtocolAdapter, adapter_for};
+    use crate::types::{RawEvent, RawInstruction, ResolveContext};
     use std::collections::HashSet;
 
     #[test]
@@ -253,26 +254,47 @@ mod tests {
 
     fn collect_instruction_event_types(
         instruction_names: &[&str],
-        classify: fn(&RawInstruction) -> Option<EventType>,
+        adapter: &dyn ProtocolAdapter,
     ) -> HashSet<String> {
         instruction_names
             .iter()
-            .filter_map(|name| classify(&make_ix(name)))
+            .filter_map(|name| adapter.classify_instruction(&make_ix(name)))
             .map(|et| et.as_ref().to_string())
             .collect()
     }
 
+    fn make_event(fields: serde_json::Value) -> RawEvent {
+        RawEvent {
+            id: 1,
+            signature: "sig".to_string(),
+            event_index: 0,
+            program_id: "p".to_string(),
+            inner_program_id: "p".to_string(),
+            event_name: "test".to_string(),
+            fields: Some(fields),
+            slot: 1,
+        }
+    }
+
     fn resolve_event_type(
         json: serde_json::Value,
-        resolve: &dyn Fn(&serde_json::Value) -> Option<EventType>,
+        adapter: &dyn ProtocolAdapter,
+        ctx: &ResolveContext,
     ) -> Option<String> {
-        resolve(&json).map(|et| et.as_ref().to_string())
+        adapter
+            .classify_and_resolve_event(&make_event(json), ctx)
+            .and_then(|r| r.ok())
+            .map(|(et, _, _)| et.as_ref().to_string())
     }
 
     #[test]
     fn event_type_reachability_all_variants_covered() {
         let mut all_event_types: HashSet<String> = HashSet::new();
+        let default_ctx = ResolveContext {
+            pre_fetched_order_pdas: None,
+        };
 
+        let dca = adapter_for(Protocol::Dca);
         let dca_ix_names = [
             "OpenDca",
             "OpenDcaV2",
@@ -287,16 +309,8 @@ mod tests {
             "Withdraw",
             "WithdrawFees",
         ];
-        all_event_types.extend(collect_instruction_event_types(
-            &dca_ix_names,
-            dca::classify_instruction_envelope,
-        ));
+        all_event_types.extend(collect_instruction_event_types(&dca_ix_names, dca));
 
-        let dca_resolve = |json: &serde_json::Value| {
-            dca::resolve_event_envelope(json)
-                .and_then(|r| r.ok())
-                .map(|(et, _, _)| et)
-        };
         let dca_event_payloads = [
             serde_json::json!({"OpenedEvent": {"dca_key": "t"}}),
             serde_json::json!({"FilledEvent": {"dca_key": "t", "in_amount": 1_u64, "out_amount": 1_u64}}),
@@ -306,11 +320,12 @@ mod tests {
             serde_json::json!({"DepositEvent": {"dca_key": "t"}}),
         ];
         for json in &dca_event_payloads {
-            if let Some(et) = resolve_event_type(json.clone(), &dca_resolve) {
+            if let Some(et) = resolve_event_type(json.clone(), dca, &default_ctx) {
                 all_event_types.insert(et);
             }
         }
 
+        let v1 = adapter_for(Protocol::LimitV1);
         let v1_ix_names = [
             "InitializeOrder",
             "PreFlashFillOrder",
@@ -322,27 +337,20 @@ mod tests {
             "InitFee",
             "UpdateFee",
         ];
-        all_event_types.extend(collect_instruction_event_types(
-            &v1_ix_names,
-            limit_v1::classify_instruction_envelope,
-        ));
+        all_event_types.extend(collect_instruction_event_types(&v1_ix_names, v1));
 
-        let v1_resolve = |json: &serde_json::Value| {
-            limit_v1::resolve_event_envelope(json)
-                .and_then(|r| r.ok())
-                .map(|(et, _, _)| et)
-        };
         let v1_event_payloads = [
             serde_json::json!({"CreateOrderEvent": {"order_key": "t"}}),
             serde_json::json!({"CancelOrderEvent": {"order_key": "t"}}),
             serde_json::json!({"TradeEvent": {"order_key": "t", "in_amount": 1_u64, "out_amount": 1_u64, "remaining_in_amount": 0_u64, "remaining_out_amount": 0_u64}}),
         ];
         for json in &v1_event_payloads {
-            if let Some(et) = resolve_event_type(json.clone(), &v1_resolve) {
+            if let Some(et) = resolve_event_type(json.clone(), v1, &default_ctx) {
                 all_event_types.insert(et);
             }
         }
 
+        let v2 = adapter_for(Protocol::LimitV2);
         let v2_ix_names = [
             "InitializeOrder",
             "PreFlashFillOrder",
@@ -351,27 +359,20 @@ mod tests {
             "UpdateFee",
             "WithdrawFee",
         ];
-        all_event_types.extend(collect_instruction_event_types(
-            &v2_ix_names,
-            limit_v2::classify_instruction_envelope,
-        ));
+        all_event_types.extend(collect_instruction_event_types(&v2_ix_names, v2));
 
-        let v2_resolve = |json: &serde_json::Value| {
-            limit_v2::resolve_event_envelope(json)
-                .and_then(|r| r.ok())
-                .map(|(et, _, _)| et)
-        };
         let v2_event_payloads = [
             serde_json::json!({"CreateOrderEvent": {"order_key": "t"}}),
             serde_json::json!({"CancelOrderEvent": {"order_key": "t"}}),
             serde_json::json!({"TradeEvent": {"order_key": "t", "making_amount": 1_u64, "taking_amount": 1_u64, "remaining_making_amount": 0_u64, "remaining_taking_amount": 0_u64}}),
         ];
         for json in &v2_event_payloads {
-            if let Some(et) = resolve_event_type(json.clone(), &v2_resolve) {
+            if let Some(et) = resolve_event_type(json.clone(), v2, &default_ctx) {
                 all_event_types.insert(et);
             }
         }
 
+        let kamino = adapter_for(Protocol::Kamino);
         let kamino_ix_names = [
             "CreateOrder",
             "TakeOrder",
@@ -385,25 +386,17 @@ mod tests {
             "WithdrawHostTip",
             "LogUserSwapBalances",
         ];
-        all_event_types.extend(collect_instruction_event_types(
-            &kamino_ix_names,
-            kamino::classify_instruction_envelope,
-        ));
+        all_event_types.extend(collect_instruction_event_types(&kamino_ix_names, kamino));
 
-        let kamino_resolve = |json: &serde_json::Value| {
-            let ctx = crate::types::ResolveContext {
-                pre_fetched_order_pdas: Some(vec!["test_pda".to_string()]),
-            };
-            kamino::resolve_event_envelope(json, "sig", &ctx)
-                .and_then(|r| r.ok())
-                .map(|(et, _, _)| et)
+        let kamino_ctx = ResolveContext {
+            pre_fetched_order_pdas: Some(vec!["test_pda".to_string()]),
         };
         let kamino_event_payloads = [
             serde_json::json!({"OrderDisplayEvent": {"status": 1_u8}}),
             serde_json::json!({"UserSwapBalancesEvent": {}}),
         ];
         for json in &kamino_event_payloads {
-            if let Some(et) = resolve_event_type(json.clone(), &kamino_resolve) {
+            if let Some(et) = resolve_event_type(json.clone(), kamino, &kamino_ctx) {
                 all_event_types.insert(et);
             }
         }

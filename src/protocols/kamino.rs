@@ -39,7 +39,21 @@ impl ProtocolAdapter for KaminoAdapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        classify_instruction_envelope(ix)
+        let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
+        let kind: KaminoInstructionKind = serde_json::from_value(wrapper).ok()?;
+        match kind {
+            KaminoInstructionKind::CreateOrder(_) => Some(EventType::Created),
+            KaminoInstructionKind::TakeOrder(_) => Some(EventType::FillCompleted),
+            KaminoInstructionKind::FlashTakeOrderStart(_) => Some(EventType::FillInitiated),
+            KaminoInstructionKind::FlashTakeOrderEnd(_) => Some(EventType::FillCompleted),
+            KaminoInstructionKind::CloseOrderAndClaimTip(_) => Some(EventType::Closed),
+            KaminoInstructionKind::InitializeGlobalConfig(_)
+            | KaminoInstructionKind::InitializeVault(_)
+            | KaminoInstructionKind::UpdateGlobalConfig(_)
+            | KaminoInstructionKind::UpdateGlobalConfigAdmin(_)
+            | KaminoInstructionKind::WithdrawHostTip(_)
+            | KaminoInstructionKind::LogUserSwapBalances(_) => None,
+        }
     }
 
     fn classify_and_resolve_event(
@@ -48,46 +62,20 @@ impl ProtocolAdapter for KaminoAdapter {
         ctx: &ResolveContext,
     ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
         let fields = ev.fields.as_ref()?;
-        resolve_event_envelope(fields, &ev.signature, ctx)
-    }
-}
-
-pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
-    let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
-    let kind: KaminoInstructionKind = serde_json::from_value(wrapper).ok()?;
-    match kind {
-        KaminoInstructionKind::CreateOrder(_) => Some(EventType::Created),
-        KaminoInstructionKind::TakeOrder(_) => Some(EventType::FillCompleted),
-        KaminoInstructionKind::FlashTakeOrderStart(_) => Some(EventType::FillInitiated),
-        KaminoInstructionKind::FlashTakeOrderEnd(_) => Some(EventType::FillCompleted),
-        KaminoInstructionKind::CloseOrderAndClaimTip(_) => Some(EventType::Closed),
-        KaminoInstructionKind::InitializeGlobalConfig(_)
-        | KaminoInstructionKind::InitializeVault(_)
-        | KaminoInstructionKind::UpdateGlobalConfig(_)
-        | KaminoInstructionKind::UpdateGlobalConfigAdmin(_)
-        | KaminoInstructionKind::WithdrawHostTip(_)
-        | KaminoInstructionKind::LogUserSwapBalances(_) => None,
-    }
-}
-
-pub fn resolve_event_envelope(
-    fields: &serde_json::Value,
-    signature: &str,
-    ctx: &ResolveContext,
-) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
-    let envelope: KaminoEventEnvelope = match serde_json::from_value(fields.clone()) {
-        Ok(e) => e,
-        Err(err) => {
-            if !contains_known_variant(fields, KaminoEventEnvelope::VARIANTS) {
-                return None;
+        let envelope: KaminoEventEnvelope = match serde_json::from_value(fields.clone()) {
+            Ok(e) => e,
+            Err(err) => {
+                if !contains_known_variant(fields, KaminoEventEnvelope::VARIANTS) {
+                    return None;
+                }
+                return Some(Err(Error::Protocol {
+                    reason: format!("failed to parse Kamino event payload: {err}"),
+                }));
             }
-            return Some(Err(Error::Protocol {
-                reason: format!("failed to parse Kamino event payload: {err}"),
-            }));
-        }
-    };
+        };
 
-    Some(resolve_kamino_event(envelope, signature, ctx))
+        Some(resolve_kamino_event(envelope, &ev.signature, ctx))
+    }
 }
 
 fn resolve_kamino_event(
@@ -316,6 +304,28 @@ mod tests {
         }
     }
 
+    fn make_event_with_sig(fields: serde_json::Value, signature: &str) -> RawEvent {
+        RawEvent {
+            id: 1,
+            signature: signature.to_string(),
+            event_index: 0,
+            program_id: "p".to_string(),
+            inner_program_id: "p".to_string(),
+            event_name: "test".to_string(),
+            fields: Some(fields),
+            slot: 1,
+        }
+    }
+
+    fn resolve(
+        fields: serde_json::Value,
+        signature: &str,
+        ctx: &ResolveContext,
+    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), crate::error::Error>> {
+        let ev = make_event_with_sig(fields, signature);
+        KaminoAdapter.classify_and_resolve_event(&ev, ctx)
+    }
+
     #[test]
     fn classify_known_instructions_via_envelope() {
         let cases = [
@@ -345,7 +355,7 @@ mod tests {
                 slot: 1,
             };
             assert_eq!(
-                classify_instruction_envelope(&ix),
+                KaminoAdapter.classify_instruction(&ix),
                 expected,
                 "mismatch for {name}"
             );
@@ -365,9 +375,7 @@ mod tests {
         let ctx = ResolveContext {
             pre_fetched_order_pdas: Some(vec!["pda1".to_string()]),
         };
-        let (event_type, correlation, payload) = resolve_event_envelope(&fields, "sig", &ctx)
-            .unwrap()
-            .unwrap();
+        let (event_type, correlation, payload) = resolve(fields, "sig", &ctx).unwrap().unwrap();
         assert_eq!(event_type, EventType::FillCompleted);
         assert_eq!(
             correlation,
@@ -399,9 +407,7 @@ mod tests {
         let ctx = ResolveContext {
             pre_fetched_order_pdas: None,
         };
-        let (_, correlation, payload) = resolve_event_envelope(&fields, "sig", &ctx)
-            .unwrap()
-            .unwrap();
+        let (_, correlation, payload) = resolve(fields, "sig", &ctx).unwrap().unwrap();
         assert!(matches!(
             correlation,
             CorrelationOutcome::Uncorrelated { .. }
@@ -412,7 +418,7 @@ mod tests {
     #[test]
     fn flash_take_instructions_are_classified() {
         assert_eq!(
-            classify_instruction_envelope(&RawInstruction {
+            KaminoAdapter.classify_instruction(&RawInstruction {
                 id: 1,
                 signature: "s".to_string(),
                 instruction_index: 0,
@@ -426,7 +432,7 @@ mod tests {
             Some(EventType::FillInitiated)
         );
         assert_eq!(
-            classify_instruction_envelope(&RawInstruction {
+            KaminoAdapter.classify_instruction(&RawInstruction {
                 id: 1,
                 signature: "s".to_string(),
                 instruction_index: 0,
@@ -625,7 +631,7 @@ mod tests {
         let ctx = ResolveContext {
             pre_fetched_order_pdas: None,
         };
-        assert!(resolve_event_envelope(&fields, "sig", &ctx).is_none());
+        assert!(resolve(fields, "sig", &ctx).is_none());
     }
 
     #[test]
@@ -641,7 +647,7 @@ mod tests {
         let ctx = ResolveContext {
             pre_fetched_order_pdas: Some(vec!["pda1".to_string()]),
         };
-        let result = resolve_event_envelope(&fields, "sig", &ctx).unwrap();
+        let result = resolve(fields, "sig", &ctx).unwrap();
         assert!(result.is_err());
     }
 
@@ -658,7 +664,7 @@ mod tests {
         let ctx = ResolveContext {
             pre_fetched_order_pdas: Some(vec!["pda1".to_string()]),
         };
-        let result = resolve_event_envelope(&fields, "sig", &ctx).unwrap();
+        let result = resolve(fields, "sig", &ctx).unwrap();
         assert!(result.is_err());
     }
 
@@ -672,9 +678,7 @@ mod tests {
         let ctx = ResolveContext {
             pre_fetched_order_pdas: None,
         };
-        let (event_type, correlation, payload) = resolve_event_envelope(&fields, "sig", &ctx)
-            .unwrap()
-            .unwrap();
+        let (event_type, correlation, payload) = resolve(fields, "sig", &ctx).unwrap().unwrap();
         assert_eq!(event_type, EventType::FillCompleted);
         assert_eq!(correlation, CorrelationOutcome::NotRequired);
         assert_eq!(payload, EventPayload::None);

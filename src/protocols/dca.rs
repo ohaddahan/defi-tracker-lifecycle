@@ -44,7 +44,26 @@ impl ProtocolAdapter for DcaAdapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        classify_instruction_envelope(ix)
+        let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
+        let kind: DcaInstructionKind = serde_json::from_value(wrapper).ok()?;
+        match kind {
+            DcaInstructionKind::OpenDca(_) | DcaInstructionKind::OpenDcaV2(_) => {
+                Some(EventType::Created)
+            }
+            DcaInstructionKind::InitiateFlashFill(_) | DcaInstructionKind::InitiateDlmmFill(_) => {
+                Some(EventType::FillInitiated)
+            }
+            DcaInstructionKind::FulfillFlashFill(_) | DcaInstructionKind::FulfillDlmmFill(_) => {
+                Some(EventType::FillCompleted)
+            }
+            DcaInstructionKind::CloseDca(_) | DcaInstructionKind::EndAndClose(_) => {
+                Some(EventType::Closed)
+            }
+            DcaInstructionKind::Transfer(_)
+            | DcaInstructionKind::Deposit(_)
+            | DcaInstructionKind::Withdraw(_)
+            | DcaInstructionKind::WithdrawFees(_) => None,
+        }
     }
 
     fn classify_and_resolve_event(
@@ -53,49 +72,20 @@ impl ProtocolAdapter for DcaAdapter {
         _ctx: &ResolveContext,
     ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
         let fields = ev.fields.as_ref()?;
-        resolve_event_envelope(fields)
-    }
-}
-
-pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
-    let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
-    let kind: DcaInstructionKind = serde_json::from_value(wrapper).ok()?;
-    match kind {
-        DcaInstructionKind::OpenDca(_) | DcaInstructionKind::OpenDcaV2(_) => {
-            Some(EventType::Created)
-        }
-        DcaInstructionKind::InitiateFlashFill(_) | DcaInstructionKind::InitiateDlmmFill(_) => {
-            Some(EventType::FillInitiated)
-        }
-        DcaInstructionKind::FulfillFlashFill(_) | DcaInstructionKind::FulfillDlmmFill(_) => {
-            Some(EventType::FillCompleted)
-        }
-        DcaInstructionKind::CloseDca(_) | DcaInstructionKind::EndAndClose(_) => {
-            Some(EventType::Closed)
-        }
-        DcaInstructionKind::Transfer(_)
-        | DcaInstructionKind::Deposit(_)
-        | DcaInstructionKind::Withdraw(_)
-        | DcaInstructionKind::WithdrawFees(_) => None,
-    }
-}
-
-pub fn resolve_event_envelope(
-    fields: &serde_json::Value,
-) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
-    let envelope: DcaEventEnvelope = match serde_json::from_value(fields.clone()) {
-        Ok(e) => e,
-        Err(err) => {
-            if !contains_known_variant(fields, DcaEventEnvelope::VARIANTS) {
-                return None;
+        let envelope: DcaEventEnvelope = match serde_json::from_value(fields.clone()) {
+            Ok(e) => e,
+            Err(err) => {
+                if !contains_known_variant(fields, DcaEventEnvelope::VARIANTS) {
+                    return None;
+                }
+                return Some(Err(Error::Protocol {
+                    reason: format!("failed to parse DCA event payload: {err}"),
+                }));
             }
-            return Some(Err(Error::Protocol {
-                reason: format!("failed to parse DCA event payload: {err}"),
-            }));
-        }
-    };
+        };
 
-    Some(resolve_dca_event(envelope))
+        Some(resolve_dca_event(envelope))
+    }
 }
 
 fn resolve_dca_event(
@@ -368,6 +358,29 @@ mod tests {
         }
     }
 
+    fn make_event(fields: serde_json::Value) -> RawEvent {
+        RawEvent {
+            id: 1,
+            signature: "sig".to_string(),
+            event_index: 0,
+            program_id: "p".to_string(),
+            inner_program_id: "p".to_string(),
+            event_name: "test".to_string(),
+            fields: Some(fields),
+            slot: 1,
+        }
+    }
+
+    fn resolve(
+        fields: serde_json::Value,
+    ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), crate::error::Error>> {
+        let ev = make_event(fields);
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: None,
+        };
+        DcaAdapter.classify_and_resolve_event(&ev, &ctx)
+    }
+
     #[test]
     fn classify_known_instructions_via_envelope() {
         let cases = [
@@ -398,7 +411,7 @@ mod tests {
                 slot: 1,
             };
             assert_eq!(
-                classify_instruction_envelope(&ix),
+                DcaAdapter.classify_instruction(&ix),
                 expected,
                 "mismatch for {name}"
             );
@@ -419,7 +432,7 @@ mod tests {
                 "user_key": "31o"
             }
         });
-        let (event_type, correlation, payload) = resolve_event_envelope(&fields).unwrap().unwrap();
+        let (event_type, correlation, payload) = resolve(fields).unwrap().unwrap();
         assert_eq!(event_type, EventType::FillCompleted);
         let CorrelationOutcome::Correlated(pdas) = correlation else {
             panic!("expected Correlated");
@@ -448,7 +461,7 @@ mod tests {
                 "total_out_withdrawn": 0, "user_key": "z", "cycle_frequency": 60
             }
         });
-        let (event_type, _, payload) = resolve_event_envelope(&fields).unwrap().unwrap();
+        let (event_type, _, payload) = resolve(fields).unwrap().unwrap();
         assert_eq!(event_type, EventType::Closed);
         assert_eq!(
             payload,
@@ -467,7 +480,7 @@ mod tests {
                 "in_deposited": 500, "input_mint": "a", "output_mint": "b", "user_key": "c"
             }
         });
-        let (event_type, correlation, payload) = resolve_event_envelope(&fields).unwrap().unwrap();
+        let (event_type, correlation, payload) = resolve(fields).unwrap().unwrap();
         assert_eq!(event_type, EventType::Created);
         assert_eq!(
             correlation,
@@ -479,7 +492,7 @@ mod tests {
     #[test]
     fn unknown_event_returns_none() {
         let fields = serde_json::json!({"UnknownEvent": {"some_field": 1}});
-        assert!(resolve_event_envelope(&fields).is_none());
+        assert!(resolve(fields).is_none());
     }
 
     #[test]
@@ -491,7 +504,7 @@ mod tests {
                 "out_amount": 1_u64
             }
         });
-        let result = resolve_event_envelope(&fields).unwrap();
+        let result = resolve(fields).unwrap();
         assert!(result.is_err());
     }
 
@@ -504,7 +517,7 @@ mod tests {
                 "out_amount": 1_u64
             }
         });
-        let result = resolve_event_envelope(&fields).unwrap();
+        let result = resolve(fields).unwrap();
         assert!(result.is_err());
     }
 
@@ -673,7 +686,7 @@ mod tests {
                 "user_key": "user123"
             }
         });
-        let (event_type, correlation, payload) = resolve_event_envelope(&fields).unwrap().unwrap();
+        let (event_type, correlation, payload) = resolve(fields).unwrap().unwrap();
         assert_eq!(event_type, EventType::Deposited);
         assert_eq!(
             correlation,
