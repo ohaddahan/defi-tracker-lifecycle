@@ -1,9 +1,12 @@
 use crate::error::Error;
 use crate::lifecycle::adapters::{CorrelationOutcome, EventPayload, dca_closed_terminal_status};
-use crate::protocols::{AccountInfo, EventType, find_account_by_name};
+use crate::protocols::{
+    AccountInfo, EventType, checked_u64_to_i64, contains_known_variant, find_account_by_name,
+};
 use crate::types::RawInstruction;
 
 #[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(strum_macros::VariantNames))]
 #[expect(
     clippy::enum_variant_names,
     reason = "variant names mirror Carbon decoder crate"
@@ -37,6 +40,15 @@ pub(crate) enum DcaInstructionKind {
     WithdrawFees(serde_json::Value),
 }
 
+const KNOWN_EVENT_NAMES: &[&str] = &[
+    "OpenedEvent",
+    "FilledEvent",
+    "ClosedEvent",
+    "CollectedFeeEvent",
+    "WithdrawEvent",
+    "DepositEvent",
+];
+
 pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
     let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
     let kind: DcaInstructionKind = serde_json::from_value(wrapper).ok()?;
@@ -65,7 +77,14 @@ pub fn resolve_event_envelope(
 ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
     let envelope: DcaEventEnvelope = match serde_json::from_value(fields.clone()) {
         Ok(e) => e,
-        Err(_) => return None,
+        Err(err) => {
+            if !contains_known_variant(fields, KNOWN_EVENT_NAMES) {
+                return None;
+            }
+            return Some(Err(Error::Protocol {
+                reason: format!("failed to parse DCA event payload: {err}"),
+            }));
+        }
     };
 
     Some(resolve_dca_event(envelope))
@@ -83,8 +102,8 @@ fn resolve_dca_event(
             EventType::FillCompleted,
             CorrelationOutcome::Correlated(vec![dca_key]),
             EventPayload::DcaFill {
-                in_amount: in_amount as i64,
-                out_amount: out_amount as i64,
+                in_amount: checked_u64_to_i64(in_amount, "in_amount")?,
+                out_amount: checked_u64_to_i64(out_amount, "out_amount")?,
             },
         )),
         DcaEventEnvelope::ClosedEvent(ClosedEventFields {
@@ -95,7 +114,7 @@ fn resolve_dca_event(
             let closed = DcaClosedEvent {
                 order_pda: dca_key,
                 user_closed,
-                unfilled_amount: unfilled_amount as i64,
+                unfilled_amount: checked_u64_to_i64(unfilled_amount, "unfilled_amount")?,
             };
             let status = dca_closed_terminal_status(&closed);
             Ok((
@@ -265,11 +284,15 @@ pub fn parse_create_args(args: &serde_json::Value) -> Result<DcaCreateArgs, Erro
     })?;
 
     Ok(DcaCreateArgs {
-        in_amount: in_amount as i64,
-        in_amount_per_cycle: in_amount_per_cycle as i64,
+        in_amount: checked_u64_to_i64(in_amount, "in_amount")?,
+        in_amount_per_cycle: checked_u64_to_i64(in_amount_per_cycle, "in_amount_per_cycle")?,
         cycle_frequency,
-        min_out_amount: min_out_amount.map(|v| v as i64),
-        max_out_amount: max_out_amount.map(|v| v as i64),
+        min_out_amount: min_out_amount
+            .map(|v| checked_u64_to_i64(v, "min_out_amount"))
+            .transpose()?,
+        max_out_amount: max_out_amount
+            .map(|v| checked_u64_to_i64(v, "max_out_amount"))
+            .transpose()?,
         start_at,
     })
 }
@@ -425,6 +448,44 @@ mod tests {
     }
 
     #[test]
+    fn malformed_known_event_returns_error() {
+        let fields = serde_json::json!({
+            "FilledEvent": {
+                "dca_key": "pda",
+                "in_amount": "bad",
+                "out_amount": 1_u64
+            }
+        });
+        let result = resolve_event_envelope(&fields).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_fill_event_rejects_amount_overflow() {
+        let fields = serde_json::json!({
+            "FilledEvent": {
+                "dca_key": "pda",
+                "in_amount": (i64::MAX as u64) + 1,
+                "out_amount": 1_u64
+            }
+        });
+        let result = resolve_event_envelope(&fields).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_create_args_rejects_overflow_amounts() {
+        let args = serde_json::json!({
+            "in_amount": (i64::MAX as u64) + 1,
+            "in_amount_per_cycle": 1_u64,
+            "cycle_frequency": 60_i64,
+            "min_out_amount": 1_u64,
+            "max_out_amount": 1_u64
+        });
+        assert!(parse_create_args(&args).is_err());
+    }
+
+    #[test]
     fn resolve_deposit_event_from_envelope() {
         let fields = serde_json::json!({
             "DepositEvent": {
@@ -489,5 +550,16 @@ mod tests {
             "ClosedEvent": { "dca_key": "t", "user_closed": false, "unfilled_amount": 0_u64 }
         });
         assert!(serde_json::from_value::<DcaEventEnvelope>(closed).is_ok());
+    }
+
+    #[test]
+    fn known_event_names_match_event_envelope_variants() {
+        let mut known = KNOWN_EVENT_NAMES.to_vec();
+        known.sort_unstable();
+
+        let mut variants = <DcaEventEnvelope as strum::VariantNames>::VARIANTS.to_vec();
+        variants.sort_unstable();
+
+        assert_eq!(known, variants);
     }
 }

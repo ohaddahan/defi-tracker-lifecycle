@@ -134,6 +134,24 @@ pub fn find_account_by_name<'a>(
     accounts.iter().find(|a| a.name.as_deref() == Some(name))
 }
 
+pub(crate) fn contains_known_variant(fields: &serde_json::Value, known_names: &[&str]) -> bool {
+    fields
+        .as_object()
+        .is_some_and(|obj| obj.keys().any(|name| known_names.contains(&name.as_str())))
+}
+
+pub(crate) fn checked_u64_to_i64(value: u64, field: &str) -> Result<i64, Error> {
+    i64::try_from(value).map_err(|_| Error::Protocol {
+        reason: format!("{field} exceeds i64::MAX: {value}"),
+    })
+}
+
+pub(crate) fn checked_u16_to_i16(value: u16, field: &str) -> Result<i16, Error> {
+    i16::try_from(value).map_err(|_| Error::Protocol {
+        reason: format!("{field} exceeds i16::MAX: {value}"),
+    })
+}
+
 #[cfg(test)]
 #[expect(clippy::unwrap_used, reason = "test assertions")]
 mod tests {

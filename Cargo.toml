@@ -59,6 +59,10 @@ carbon-jupiter-limit-order-decoder = "0.12"
 carbon-jupiter-limit-order-2-decoder = "0.12"
 carbon-kamino-limit-order-decoder = "0.12"
 
+[dev-dependencies]
+strum = "0.26"
+strum_macros = "0.26"
+
 [dev-dependencies.cargo-husky]
 version = "1"
 default-features = false

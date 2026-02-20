@@ -92,6 +92,23 @@ fn dca_classify_events_from_fixture() {
 }
 
 #[test]
+fn dca_malformed_known_event_surfaces_error() {
+    let adapter = adapter_for(Protocol::Dca);
+    let ev = make_event(
+        "FilledEvent",
+        serde_json::json!({
+            "FilledEvent": {
+                "dca_key": "order",
+                "in_amount": "bad",
+                "out_amount": 1_u64
+            }
+        }),
+    );
+    let result = adapter.classify_and_resolve_event(&ev, &no_context());
+    assert!(matches!(result, Some(Err(_))));
+}
+
+#[test]
 fn dca_resolve_fill_event_extracts_amounts() {
     let events = load_events("dca_events.json");
     let ev = events
@@ -284,6 +301,26 @@ fn kamino_resolve_display_event_without_pdas() {
         "should be Uncorrelated without pre_fetched_order_pdas"
     );
     assert_eq!(payload, EventPayload::None);
+}
+
+#[test]
+fn kamino_malformed_known_event_surfaces_error() {
+    let adapter = adapter_for(Protocol::Kamino);
+    let ev = make_event(
+        "OrderDisplayEvent",
+        serde_json::json!({
+            "OrderDisplayEvent": {
+                "remaining_input_amount": "bad",
+                "filled_output_amount": 1_u64,
+                "status": 1_u8
+            }
+        }),
+    );
+    let ctx = ResolveContext {
+        pre_fetched_order_pdas: Some(vec!["pda".to_string()]),
+    };
+    let result = adapter.classify_and_resolve_event(&ev, &ctx);
+    assert!(matches!(result, Some(Err(_))));
 }
 
 // ──────────────────── Limit V1 ────────────────────
@@ -493,7 +530,7 @@ fn limit_v2_resolve_create_and_cancel_events() {
 
 // ──────────────────── End-to-End Lifecycle ────────────────────
 //
-// These tests bridge the adapter layer (raw JSON → EventType + EventPayload)
+// These tests bridge the adapter layer (raw JSON → EventType + Correlation + EventPayload)
 // with the lifecycle state machine (LifecycleTransition → TransitionDecision).
 // The EventType→LifecycleTransition mapping mirrors what the parent defi-tracker
 // crate does at runtime.
@@ -525,6 +562,17 @@ fn event_type_to_transition(event_type: &EventType, payload: &EventPayload) -> L
     }
 }
 
+fn event_to_transition(
+    event_type: &EventType,
+    correlation: &CorrelationOutcome,
+    payload: &EventPayload,
+) -> LifecycleTransition {
+    if matches!(correlation, CorrelationOutcome::NotRequired) {
+        return LifecycleTransition::MetadataOnly;
+    }
+    event_type_to_transition(event_type, payload)
+}
+
 fn make_event(name: &str, fields: serde_json::Value) -> RawEvent {
     RawEvent {
         id: 1,
@@ -553,12 +601,12 @@ impl LifecycleState {
 
     fn apply_event(&mut self, ev: &RawEvent, ctx: &ResolveContext) -> TransitionDecision {
         let adapter = adapter_for(self.protocol);
-        let (event_type, _correlation, payload) = adapter
+        let (event_type, correlation, payload) = adapter
             .classify_and_resolve_event(ev, ctx)
             .unwrap_or_else(|| panic!("unclassified event: {}", ev.event_name))
             .unwrap_or_else(|e| panic!("resolve failed: {e}"));
 
-        let transition = event_type_to_transition(&event_type, &payload);
+        let transition = event_to_transition(&event_type, &correlation, &payload);
         let decision = LifecycleEngine::decide_transition(self.status.as_deref(), transition);
 
         if decision == TransitionDecision::Apply {
@@ -837,5 +885,27 @@ fn lifecycle_kamino_create_fill_close_completed() {
     assert_eq!(
         state.apply_instruction(&late_take),
         Some(TransitionDecision::IgnoreTerminalViolation)
+    );
+}
+
+#[test]
+fn lifecycle_kamino_user_swap_balances_is_metadata_only() {
+    let mut state = LifecycleState::new(Protocol::Kamino);
+    let ctx = no_context();
+
+    state.status = Some("completed".to_string());
+
+    let swap_balances = make_event(
+        "UserSwapBalancesEvent",
+        serde_json::json!({"UserSwapBalancesEvent": {"some_field": 42}}),
+    );
+    assert_eq!(
+        state.apply_event(&swap_balances, &ctx),
+        TransitionDecision::Apply
+    );
+    assert_eq!(
+        state.status.as_deref(),
+        Some("completed"),
+        "diagnostic event should not mutate lifecycle status"
     );
 }

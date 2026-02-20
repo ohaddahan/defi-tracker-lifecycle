@@ -86,10 +86,11 @@ let adapter = adapter_for(protocol.unwrap());
 let ctx = ResolveContext { pre_fetched_order_pdas: None };
 let (event_type, correlation, payload) = adapter
     .classify_and_resolve_event(&raw_event, &ctx)
-    .unwrap()  // None = unknown event
-    .unwrap(); // Err = parse failure
+    .unwrap()  // None = unknown event variant
+    .unwrap(); // Err = malformed known event payload
 
 // 3. Map EventType to LifecycleTransition (your responsibility)
+//    Recommended: treat CorrelationOutcome::NotRequired as MetadataOnly.
 let transition = LifecycleTransition::FillDelta;
 
 // 4. Check state transition
@@ -106,7 +107,7 @@ match decision {
 ## Testing
 
 ```bash
-cargo test                  # run all 71 tests (47 unit + 24 integration)
+cargo test                  # run all 92 tests (65 unit + 27 integration)
 cargo clippy                # lint check
 ```
 

@@ -2,10 +2,13 @@ use crate::error::Error;
 use crate::lifecycle::adapters::{
     CorrelationOutcome, EventPayload, kamino_display_terminal_status,
 };
-use crate::protocols::{AccountInfo, EventType, find_account_by_name};
+use crate::protocols::{
+    AccountInfo, EventType, checked_u64_to_i64, contains_known_variant, find_account_by_name,
+};
 use crate::types::{RawInstruction, ResolveContext};
 
 #[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(strum_macros::VariantNames))]
 #[expect(
     dead_code,
     reason = "variant data consumed by serde, not read directly"
@@ -34,6 +37,8 @@ pub(crate) enum KaminoInstructionKind {
     LogUserSwapBalances(serde_json::Value),
 }
 
+const KNOWN_EVENT_NAMES: &[&str] = &["OrderDisplayEvent", "UserSwapBalancesEvent"];
+
 pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
     let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
     let kind: KaminoInstructionKind = serde_json::from_value(wrapper).ok()?;
@@ -59,7 +64,14 @@ pub fn resolve_event_envelope(
 ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
     let envelope: KaminoEventEnvelope = match serde_json::from_value(fields.clone()) {
         Ok(e) => e,
-        Err(_) => return None,
+        Err(err) => {
+            if !contains_known_variant(fields, KNOWN_EVENT_NAMES) {
+                return None;
+            }
+            return Some(Err(Error::Protocol {
+                reason: format!("failed to parse Kamino event payload: {err}"),
+            }));
+        }
     };
 
     Some(resolve_kamino_event(envelope, signature, ctx))
@@ -96,8 +108,14 @@ fn resolve_kamino_event(
                 EventType::FillCompleted,
                 CorrelationOutcome::Correlated(order_pdas),
                 EventPayload::KaminoDisplay {
-                    remaining_input_amount: display_fields.remaining_input_amount as i64,
-                    filled_output_amount: display_fields.filled_output_amount as i64,
+                    remaining_input_amount: checked_u64_to_i64(
+                        display_fields.remaining_input_amount,
+                        "remaining_input_amount",
+                    )?,
+                    filled_output_amount: checked_u64_to_i64(
+                        display_fields.filled_output_amount,
+                        "filled_output_amount",
+                    )?,
                     terminal_status,
                 },
             ))
@@ -192,8 +210,8 @@ pub fn parse_create_args(args: &serde_json::Value) -> Result<KaminoCreateArgs, E
     })?;
 
     Ok(KaminoCreateArgs {
-        input_amount: input_amount as i64,
-        output_amount: output_amount as i64,
+        input_amount: checked_u64_to_i64(input_amount, "input_amount")?,
+        output_amount: checked_u64_to_i64(output_amount, "output_amount")?,
         order_type: i16::from(order_type),
     })
 }
@@ -462,6 +480,40 @@ mod tests {
     }
 
     #[test]
+    fn malformed_known_event_returns_error() {
+        let fields = serde_json::json!({
+            "OrderDisplayEvent": {
+                "remaining_input_amount": "bad",
+                "filled_output_amount": 1_u64,
+                "number_of_fills": 1_u64,
+                "status": 1_u8
+            }
+        });
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: Some(vec!["pda1".to_string()]),
+        };
+        let result = resolve_event_envelope(&fields, "sig", &ctx).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_display_event_rejects_amount_overflow() {
+        let fields = serde_json::json!({
+            "OrderDisplayEvent": {
+                "remaining_input_amount": (i64::MAX as u64) + 1,
+                "filled_output_amount": 1_u64,
+                "number_of_fills": 1_u64,
+                "status": 1_u8
+            }
+        });
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: Some(vec!["pda1".to_string()]),
+        };
+        let result = resolve_event_envelope(&fields, "sig", &ctx).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn resolve_user_swap_balances_event() {
         let fields = serde_json::json!({
             "UserSwapBalancesEvent": {
@@ -477,6 +529,16 @@ mod tests {
         assert_eq!(event_type, EventType::FillCompleted);
         assert_eq!(correlation, CorrelationOutcome::NotRequired);
         assert_eq!(payload, EventPayload::None);
+    }
+
+    #[test]
+    fn parse_create_args_rejects_amount_overflow() {
+        let args = serde_json::json!({
+            "input_amount": (i64::MAX as u64) + 1,
+            "output_amount": 1_u64,
+            "order_type": 0_u8
+        });
+        assert!(parse_create_args(&args).is_err());
     }
 
     #[test]
@@ -510,5 +572,16 @@ mod tests {
                 "KaminoEventEnvelope missing variant: {name}"
             );
         }
+    }
+
+    #[test]
+    fn known_event_names_match_event_envelope_variants() {
+        let mut known = KNOWN_EVENT_NAMES.to_vec();
+        known.sort_unstable();
+
+        let mut variants = <KaminoEventEnvelope as strum::VariantNames>::VARIANTS.to_vec();
+        variants.sort_unstable();
+
+        assert_eq!(known, variants);
     }
 }

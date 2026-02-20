@@ -1,9 +1,12 @@
 use crate::error::Error;
 use crate::lifecycle::adapters::{CorrelationOutcome, EventPayload};
-use crate::protocols::{AccountInfo, EventType, find_account_by_name};
+use crate::protocols::{
+    AccountInfo, EventType, checked_u64_to_i64, contains_known_variant, find_account_by_name,
+};
 use crate::types::RawInstruction;
 
 #[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(strum_macros::VariantNames))]
 #[expect(
     clippy::enum_variant_names,
     reason = "variant names mirror Carbon decoder crate"
@@ -31,6 +34,8 @@ pub(crate) enum LimitV1InstructionKind {
     UpdateFee(serde_json::Value),
 }
 
+const KNOWN_EVENT_NAMES: &[&str] = &["CreateOrderEvent", "CancelOrderEvent", "TradeEvent"];
+
 pub fn classify_instruction_envelope(ix: &RawInstruction) -> Option<EventType> {
     let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
     let kind: LimitV1InstructionKind = serde_json::from_value(wrapper).ok()?;
@@ -53,7 +58,14 @@ pub fn resolve_event_envelope(
 ) -> Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>> {
     let envelope: LimitV1EventEnvelope = match serde_json::from_value(fields.clone()) {
         Ok(e) => e,
-        Err(_) => return None,
+        Err(err) => {
+            if !contains_known_variant(fields, KNOWN_EVENT_NAMES) {
+                return None;
+            }
+            return Some(Err(Error::Protocol {
+                reason: format!("failed to parse Limit v1 event payload: {err}"),
+            }));
+        }
     };
 
     Some(resolve_limit_v1_event(envelope))
@@ -84,9 +96,12 @@ fn resolve_limit_v1_event(
             EventType::FillCompleted,
             CorrelationOutcome::Correlated(vec![order_key]),
             EventPayload::LimitFill {
-                in_amount: in_amount as i64,
-                out_amount: out_amount as i64,
-                remaining_in_amount: remaining_in_amount as i64,
+                in_amount: checked_u64_to_i64(in_amount, "in_amount")?,
+                out_amount: checked_u64_to_i64(out_amount, "out_amount")?,
+                remaining_in_amount: checked_u64_to_i64(
+                    remaining_in_amount,
+                    "remaining_in_amount",
+                )?,
                 counterparty: taker,
             },
         )),
@@ -212,8 +227,8 @@ pub fn parse_create_args(args: &serde_json::Value) -> Result<LimitV1CreateArgs, 
     })?;
 
     Ok(LimitV1CreateArgs {
-        making_amount: making_amount as i64,
-        taking_amount: taking_amount as i64,
+        making_amount: checked_u64_to_i64(making_amount, "making_amount")?,
+        taking_amount: checked_u64_to_i64(taking_amount, "taking_amount")?,
         expired_at,
     })
 }
@@ -334,6 +349,45 @@ mod tests {
     }
 
     #[test]
+    fn malformed_known_event_returns_error() {
+        let fields = serde_json::json!({
+            "TradeEvent": {
+                "order_key": "order",
+                "in_amount": "bad",
+                "out_amount": 1_u64,
+                "remaining_in_amount": 0_u64,
+                "remaining_out_amount": 0_u64
+            }
+        });
+        let result = resolve_event_envelope(&fields).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_trade_event_rejects_amount_overflow() {
+        let fields = serde_json::json!({
+            "TradeEvent": {
+                "order_key": "order",
+                "in_amount": (i64::MAX as u64) + 1,
+                "out_amount": 1_u64,
+                "remaining_in_amount": 0_u64,
+                "remaining_out_amount": 0_u64
+            }
+        });
+        let result = resolve_event_envelope(&fields).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_create_args_rejects_amount_overflow() {
+        let args = serde_json::json!({
+            "making_amount": (i64::MAX as u64) + 1,
+            "taking_amount": 1_u64
+        });
+        assert!(parse_create_args(&args).is_err());
+    }
+
+    #[test]
     fn mirror_enums_cover_all_carbon_variants() {
         let instruction_variants = [
             "InitializeOrder",
@@ -367,5 +421,16 @@ mod tests {
                 "remaining_in_amount": 0_u64, "remaining_out_amount": 0_u64 }
         });
         assert!(serde_json::from_value::<LimitV1EventEnvelope>(trade).is_ok());
+    }
+
+    #[test]
+    fn known_event_names_match_event_envelope_variants() {
+        let mut known = KNOWN_EVENT_NAMES.to_vec();
+        known.sort_unstable();
+
+        let mut variants = <LimitV1EventEnvelope as strum::VariantNames>::VARIANTS.to_vec();
+        variants.sort_unstable();
+
+        assert_eq!(known, variants);
     }
 }

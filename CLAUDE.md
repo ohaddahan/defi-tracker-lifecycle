@@ -13,7 +13,7 @@ src/
     mod.rs                  # LifecycleEngine state machine, TerminalStatus, SnapshotDelta
     adapters.rs             # ProtocolAdapter trait, adapter_for(), CorrelationOutcome, EventPayload
   protocols/
-    mod.rs                  # Protocol enum, EventType enum, program ID constants, account parsing helpers
+    mod.rs                  # Protocol/EventType enums, program IDs, shared account + checked-cast + known-variant helpers
     dca.rs                  # Jupiter DCA adapter (mirror enums: DcaEventEnvelope, DcaInstructionKind)
     limit_v1.rs             # Jupiter Limit V1 adapter (mirror enums: LimitV1EventEnvelope, LimitV1InstructionKind)
     limit_v2.rs             # Jupiter Limit V2 adapter (mirror enums: LimitV2EventEnvelope, LimitV2InstructionKind)
@@ -39,6 +39,8 @@ tests/
 
 **Runtime guardrails (mirror enum alignment tests)**: Each protocol has a `mirror_enums_cover_all_carbon_variants` test that constructs `{"VariantName": <minimal_payload>}` JSON for every Carbon variant and asserts the mirror enum (`*InstructionKind`, `*EventEnvelope`) deserializes it. This bridges the compile-time `classify_decoded()` guard with the runtime serde dispatch — if someone adds a Carbon variant to `classify_decoded()` but forgets the mirror enum, this test catches it.
 
+**Runtime guardrails (known-name alignment tests)**: Each protocol also has `known_event_names_match_event_envelope_variants`, asserting `KNOWN_EVENT_NAMES` exactly matches `*EventEnvelope` variant names (via `strum::VariantNames`). This prevents regressions where malformed payloads for newly added known variants are accidentally treated as unknown (`None`).
+
 **EventType reachability test**: `event_type_reachability_all_variants_covered` in `protocols/mod.rs` runs all instruction+event variant names through classify/resolve across all protocols, collects produced `EventType` values, and asserts all 9 variants are hit. Catches dead/unreachable variants.
 
 **End-to-end lifecycle tests**: `adapter_fixtures.rs` contains `lifecycle_*` tests that bridge the adapter layer with the state machine. A `LifecycleState` struct tracks status across steps, flowing raw JSON → adapter classification → `EventType` → `LifecycleTransition` → `decide_transition` → status update. Each test simulates a complete order lifecycle (create → fills → close → terminal rejection).
@@ -46,7 +48,7 @@ tests/
 ## Protocol-Specific Notes
 
 - **DCA**: ClosedEvent terminal status derived from `user_closed` + `unfilled_amount` fields (not a direct status code)
-- **Kamino**: `OrderDisplayEvent` has no order PDA — requires `ResolveContext::pre_fetched_order_pdas` from instruction-level account parsing. Returns `Uncorrelated` if PDAs missing. `UserSwapBalancesEvent` is diagnostic-only (NotRequired correlation).
+- **Kamino**: `OrderDisplayEvent` has no order PDA — requires `ResolveContext::pre_fetched_order_pdas` from instruction-level account parsing. Returns `Uncorrelated` if PDAs missing. `UserSwapBalancesEvent` is diagnostic-only (NotRequired correlation; should map to `MetadataOnly` transition).
 - **Limit V2**: Args may be nested in `{"params": {...}}` wrapper or flat — adapter handles both. V2 TradeEvent uses `making_amount`/`taking_amount` field names; V1 uses `in_amount`/`out_amount` with `#[serde(alias)]` for backward compat.
 - **Limit V1**: `CancelExpiredOrder` instruction maps to `Expired` EventType (distinct from V2 which has no expiry instruction)
 
@@ -63,7 +65,7 @@ tests/
 ## Commands
 
 ```bash
-cargo test                  # 71 tests (47 unit + 24 integration)
+cargo test                  # 92 tests (65 unit + 27 integration)
 cargo clippy                # pedantic + deny(unwrap_used, expect_used, panic, ...)
 cargo fmt                   # format
 cargo llvm-cov              # coverage
@@ -87,11 +89,11 @@ Layer 6: Lifecycle E2E      lifecycle_* tests: raw JSON → adapter → state ma
 ## Gotchas
 
 - Global `~/.cargo/config.toml` sets `-D clippy::unwrap-used` and `-D clippy::allow-attributes` via RUSTFLAGS — overrides Cargo.toml and code-level `#[allow]`. Use `#[expect(...)]` instead.
-- `protocols/mod.rs` helper functions (`parse_accounts`, `find_signer`) are shared across all adapters — changes affect all protocols.
+- `protocols/mod.rs` helper functions (`parse_accounts`, `find_signer`, checked numeric casts, known-variant detection) are shared across all adapters — changes affect all protocols.
 - Carbon decoder crates (`carbon-jupiter-dca-decoder`, etc.) are used for exhaustive enum matching in `classify_decoded()` functions (test-only), NOT for direct serde deserialization — `solana_pubkey::Pubkey` v3 doesn't deserialize from base58 strings in JSON.
 - Mirror enums must keep `serde_json::Value` inner type on instruction variants to consume any JSON payload (including `null` for args-less instructions).
 - Mirror enum alignment tests need minimal valid JSON payloads (not just `{}`), because inner structs like `DcaKeyHolder { dca_key: String }` have required fields.
 - `SnapshotDelta::delta` is always `>= 0` even if snapshot regresses. Regression tracked as separate bool.
-- No `EventType → LifecycleTransition` mapping function exists in this crate — the consumer (defi-tracker) defines it. End-to-end lifecycle tests define the mapping inline via `event_type_to_transition()`.
+- No `EventType → LifecycleTransition` mapping function exists in this crate — the consumer (defi-tracker) defines it. End-to-end lifecycle tests define the mapping inline via `event_type_to_transition()` and `event_to_transition()`, including `NotRequired -> MetadataOnly`.
 - Limit V1 instruction fixtures contain only `CancelOrder` records (793 from real data). V1 event fixtures are synthetic.
 - Pre-commit hooks via `cargo-husky`: runs test, clippy, fmt on commit.

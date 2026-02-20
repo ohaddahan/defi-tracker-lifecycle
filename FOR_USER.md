@@ -54,7 +54,7 @@ lib.rs          -- Public API surface, re-exports everything
     +-- error.rs          -- Error enum (Parse, Protocol, Json)
     |
     +-- protocols/
-    |       mod.rs         -- Protocol enum, EventType, shared account helpers, program ID tests
+    |       mod.rs         -- Protocol/EventType + shared account helpers + checked casts + known-variant detection
     |       dca.rs         -- DcaEventEnvelope + DcaInstructionKind (mirror enums)
     |       limit_v1.rs    -- LimitV1EventEnvelope + LimitV1InstructionKind
     |       limit_v2.rs    -- LimitV2EventEnvelope + LimitV2InstructionKind
@@ -81,11 +81,11 @@ Each protocol defines two mirror enums:
 - `*EventEnvelope` — variant names match Carbon's event variants, inner types are local structs with `String` for pubkeys
 - `*InstructionKind` — variant names match Carbon's instruction variants, inner `serde_json::Value` (consumed by serde, not read)
 
-Why "mirror" instead of using Carbon types directly? Because `solana_pubkey::Pubkey` v3 deserializes from byte arrays `[u8; 32]`, not base58 strings. Our JSON uses base58 strings. So we define local types with `String` fields and cast `u64 -> i64` at the boundary.
+Why "mirror" instead of using Carbon types directly? Because `solana_pubkey::Pubkey` v3 deserializes from byte arrays `[u8; 32]`, not base58 strings. Our JSON uses base58 strings. So we define local types with `String` fields and do checked `u64 -> i64` conversion at the boundary.
 
 ### Single-Pass Classify + Resolve
 
-The old approach was: classify event name (string match) -> unwrap JSON wrapper -> resolve fields (second parse). The new approach: `serde_json::from_value::<DcaEventEnvelope>(fields)` does variant matching AND field extraction in one shot. The trait method `classify_and_resolve_event` returns `Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>>` — `None` means unknown event, `Some(Ok(...))` means classified + resolved, `Some(Err(...))` means parse failure.
+The old approach was: classify event name (string match) -> unwrap JSON wrapper -> resolve fields (second parse). The new approach: `serde_json::from_value::<DcaEventEnvelope>(fields)` does variant matching AND field extraction in one shot. The trait method `classify_and_resolve_event` returns `Option<Result<(EventType, CorrelationOutcome, EventPayload), Error>>` — `None` means unknown event variant, `Some(Ok(...))` means classified + resolved, `Some(Err(...))` means malformed known payload.
 
 ### Multi-Layer Safety Net
 
@@ -96,6 +96,8 @@ Each protocol has a `#[cfg(test)]` function that exhaustively matches Carbon's i
 
 **Layer 2 — Mirror enum alignment tests**
 But `classify_decoded()` and the mirror enums are independent code paths — someone could add a variant to `classify_decoded()` without touching the mirror enum. The `mirror_enums_cover_all_carbon_variants` test closes this gap: it constructs `{"VariantName": <payload>}` JSON for every Carbon variant and asserts the mirror enum deserializes it. If the two sides drift, this test fails.
+
+There is also a second runtime sync guard: `known_event_names_match_event_envelope_variants` in each protocol module. It asserts `KNOWN_EVENT_NAMES` (used for malformed-known vs unknown discrimination) exactly matches `*EventEnvelope` variant names via `strum::VariantNames`.
 
 **Layer 3 — EventType reachability**
 The `event_type_reachability_all_variants_covered` test runs every instruction and event variant across all four protocols, collects all produced `EventType` values, and asserts all 9 variants (`Created`, `FillInitiated`, `FillCompleted`, `Cancelled`, `Expired`, `Closed`, `FeeCollected`, `Withdrawn`, `Deposited`) are hit. If a variant becomes dead, this catches it.
@@ -141,4 +143,4 @@ When writing alignment tests, you can't just use `{"EventName": {}}` for event v
 
 ### The Missing Bridge: EventType → LifecycleTransition
 
-This crate provides two layers that don't connect to each other: adapters produce `EventType`, and the state machine consumes `LifecycleTransition`. The mapping between them lives in the consumer (the parent defi-tracker crate). The end-to-end lifecycle tests define this mapping inline via `event_type_to_transition()`, which doubles as documentation of the intended usage.
+This crate provides two layers that don't connect to each other: adapters produce `EventType`, and the state machine consumes `LifecycleTransition`. The mapping between them lives in the consumer (the parent defi-tracker crate). The end-to-end lifecycle tests define this mapping inline via `event_type_to_transition()` and `event_to_transition()`, including `CorrelationOutcome::NotRequired -> LifecycleTransition::MetadataOnly` for diagnostic events.
