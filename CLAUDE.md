@@ -29,7 +29,7 @@ tests/
 
 **Enum-based dispatch**: Each protocol defines mirror enums (`*EventEnvelope`, `*InstructionKind`) whose variant names match Carbon decoder crate variants exactly. Event JSON (already `{"EventName": {...}}` format) deserializes directly via serde's externally-tagged enum. Instructions use a constructed `{"Name": args}` wrapper. Classification + field extraction happen in a single `serde_json::from_value` call.
 
-**State machine**: `LifecycleEngine::decide_transition()` — non-terminal accepts all transitions; terminal (completed/cancelled/expired) only accepts `MetadataOnly`.
+**State machine**: `LifecycleEngine::decide_transition(Option<TerminalStatus>, LifecycleTransition)` — `None` (non-terminal) accepts all transitions; `Some(TerminalStatus)` only accepts `MetadataOnly`.
 
 **Adapters are stateless** — zero-sized structs stored as statics. Each protocol implements `ProtocolAdapter` with `classify_instruction` and `classify_and_resolve_event`.
 

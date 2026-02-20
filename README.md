@@ -93,9 +93,10 @@ let (event_type, correlation, payload) = adapter
 //    Recommended: treat CorrelationOutcome::NotRequired as MetadataOnly.
 let transition = LifecycleTransition::FillDelta;
 
-// 4. Check state transition
+// 4. Check state transition (pass None if not terminal)
+let current_terminal: Option<TerminalStatus> = None;
 let decision = LifecycleEngine::decide_transition(
-    current_status,
+    current_terminal,
     transition,
 );
 match decision {

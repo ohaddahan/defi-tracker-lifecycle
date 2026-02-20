@@ -1,29 +1,20 @@
 pub mod adapters;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    strum_macros::Display,
+    strum_macros::EnumString,
+    strum_macros::AsRefStr,
+)]
+#[strum(serialize_all = "lowercase")]
 pub enum TerminalStatus {
     Completed,
     Cancelled,
     Expired,
-}
-
-impl TerminalStatus {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Completed => "completed",
-            Self::Cancelled => "cancelled",
-            Self::Expired => "expired",
-        }
-    }
-
-    pub fn from_status(status: &str) -> Option<Self> {
-        match status {
-            "completed" => Some(Self::Completed),
-            "cancelled" => Some(Self::Cancelled),
-            "expired" => Some(Self::Expired),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,16 +40,11 @@ pub struct SnapshotDelta {
 pub struct LifecycleEngine;
 
 impl LifecycleEngine {
-    pub fn is_terminal_status(status: &str) -> bool {
-        matches!(status, "cancelled" | "completed" | "expired")
-    }
-
     pub fn decide_transition(
-        current_status: Option<&str>,
+        current_terminal: Option<TerminalStatus>,
         transition: LifecycleTransition,
     ) -> TransitionDecision {
-        let current_is_terminal = current_status.is_some_and(Self::is_terminal_status);
-        if !current_is_terminal {
+        if current_terminal.is_none() {
             return TransitionDecision::Apply;
         }
 
@@ -112,32 +98,24 @@ mod tests {
     #[test]
     fn terminal_status_roundtrip() {
         assert_eq!(
-            TerminalStatus::from_status("completed"),
+            "completed".parse::<TerminalStatus>().ok(),
             Some(TerminalStatus::Completed)
         );
         assert_eq!(
-            TerminalStatus::from_status("cancelled"),
+            "cancelled".parse::<TerminalStatus>().ok(),
             Some(TerminalStatus::Cancelled)
         );
         assert_eq!(
-            TerminalStatus::from_status("expired"),
+            "expired".parse::<TerminalStatus>().ok(),
             Some(TerminalStatus::Expired)
         );
-        assert_eq!(TerminalStatus::from_status("active"), None);
-        assert_eq!(TerminalStatus::Completed.as_str(), "completed");
-    }
-
-    #[test]
-    fn terminal_statuses_are_detected() {
-        assert!(LifecycleEngine::is_terminal_status("cancelled"));
-        assert!(LifecycleEngine::is_terminal_status("completed"));
-        assert!(LifecycleEngine::is_terminal_status("expired"));
-        assert!(!LifecycleEngine::is_terminal_status("active"));
+        assert_eq!("active".parse::<TerminalStatus>().ok(), None);
+        assert_eq!(TerminalStatus::Completed.to_string(), "completed");
     }
 
     #[test]
     fn terminal_orders_reject_state_mutating_transitions() {
-        let current = Some("completed");
+        let current = Some(TerminalStatus::Completed);
         assert_eq!(
             LifecycleEngine::decide_transition(current, LifecycleTransition::Create),
             TransitionDecision::IgnoreTerminalViolation
@@ -208,7 +186,11 @@ mod tests {
 
     #[test]
     fn terminal_immutability_property_holds_for_all_terminals() {
-        let terminal_statuses = ["completed", "cancelled", "expired"];
+        let terminal_statuses = [
+            TerminalStatus::Completed,
+            TerminalStatus::Cancelled,
+            TerminalStatus::Expired,
+        ];
         let mut seed = 0xDEAD_BEEF_u64;
 
         for status in terminal_statuses {
@@ -232,34 +214,28 @@ mod tests {
     #[test]
     fn non_terminal_statuses_do_not_block_transitions() {
         let mut seed = 0xA11CE_u64;
-        let non_terminal_statuses = [None, Some("created"), Some("active"), Some("unknown")];
 
-        for status in non_terminal_statuses {
-            for _ in 0..3_000 {
-                let transition = random_transition(&mut seed);
-                let decision = LifecycleEngine::decide_transition(status, transition);
-                assert_eq!(decision, TransitionDecision::Apply);
-            }
+        for _ in 0..12_000 {
+            let transition = random_transition(&mut seed);
+            let decision = LifecycleEngine::decide_transition(None, transition);
+            assert_eq!(decision, TransitionDecision::Apply);
         }
     }
 
     fn apply_sequence(steps: &[(LifecycleTransition, TransitionDecision)]) {
-        let mut current_status: Option<&str> = None;
+        let mut current_terminal: Option<TerminalStatus> = None;
 
         for (i, (transition, expected_decision)) in steps.iter().enumerate() {
-            let decision = LifecycleEngine::decide_transition(current_status, *transition);
+            let decision = LifecycleEngine::decide_transition(current_terminal, *transition);
             assert_eq!(
                 decision, *expected_decision,
-                "step {i}: expected {expected_decision:?} for {transition:?} with status {current_status:?}"
+                "step {i}: expected {expected_decision:?} for {transition:?} with terminal {current_terminal:?}"
             );
 
             if decision == TransitionDecision::Apply {
-                current_status = match transition {
-                    LifecycleTransition::Create => Some("created"),
-                    LifecycleTransition::FillDelta => current_status,
-                    LifecycleTransition::Close { status } => Some(status.as_str()),
-                    LifecycleTransition::MetadataOnly => current_status,
-                };
+                if let LifecycleTransition::Close { status } = transition {
+                    current_terminal = Some(*status);
+                }
             }
         }
     }

@@ -599,6 +599,12 @@ impl LifecycleState {
         }
     }
 
+    fn terminal_status(&self) -> Option<TerminalStatus> {
+        self.status
+            .as_deref()
+            .and_then(|s| s.parse::<TerminalStatus>().ok())
+    }
+
     fn apply_event(&mut self, ev: &RawEvent, ctx: &ResolveContext) -> TransitionDecision {
         let adapter = adapter_for(self.protocol);
         let (event_type, correlation, payload) = adapter
@@ -607,13 +613,13 @@ impl LifecycleState {
             .unwrap_or_else(|e| panic!("resolve failed: {e}"));
 
         let transition = event_to_transition(&event_type, &correlation, &payload);
-        let decision = LifecycleEngine::decide_transition(self.status.as_deref(), transition);
+        let decision = LifecycleEngine::decide_transition(self.terminal_status(), transition);
 
         if decision == TransitionDecision::Apply {
             self.status = match transition {
                 LifecycleTransition::Create => Some("created".to_string()),
                 LifecycleTransition::FillDelta => self.status.take().or(Some("active".to_string())),
-                LifecycleTransition::Close { status } => Some(status.as_str().to_string()),
+                LifecycleTransition::Close { status } => Some(status.to_string()),
                 LifecycleTransition::MetadataOnly => self.status.take(),
             };
         }
@@ -625,13 +631,13 @@ impl LifecycleState {
         let adapter = adapter_for(self.protocol);
         let event_type = adapter.classify_instruction(ix)?;
         let transition = event_type_to_transition(&event_type, &EventPayload::None);
-        let decision = LifecycleEngine::decide_transition(self.status.as_deref(), transition);
+        let decision = LifecycleEngine::decide_transition(self.terminal_status(), transition);
 
         if decision == TransitionDecision::Apply {
             self.status = match transition {
                 LifecycleTransition::Create => Some("created".to_string()),
                 LifecycleTransition::FillDelta => self.status.take().or(Some("active".to_string())),
-                LifecycleTransition::Close { status } => Some(status.as_str().to_string()),
+                LifecycleTransition::Close { status } => Some(status.to_string()),
                 LifecycleTransition::MetadataOnly => self.status.take(),
             };
         }
