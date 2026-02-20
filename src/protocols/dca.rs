@@ -333,6 +333,15 @@ mod tests {
     use super::*;
     use crate::lifecycle::TerminalStatus;
 
+    fn account(pubkey: &str, name: Option<&str>) -> AccountInfo {
+        AccountInfo {
+            pubkey: pubkey.to_string(),
+            is_signer: false,
+            is_writable: false,
+            name: name.map(str::to_string),
+        }
+    }
+
     #[test]
     fn classify_known_instructions_via_envelope() {
         let cases = [
@@ -483,6 +492,150 @@ mod tests {
             "max_out_amount": 1_u64
         });
         assert!(parse_create_args(&args).is_err());
+    }
+
+    #[test]
+    fn parse_create_args_accepts_valid_payload() {
+        let args = serde_json::json!({
+            "in_amount": 1_000_u64,
+            "in_amount_per_cycle": 100_u64,
+            "cycle_frequency": 60_i64,
+            "min_out_amount": 10_u64,
+            "max_out_amount": 500_u64,
+            "start_at": 1_700_000_000_i64
+        });
+        let parsed = parse_create_args(&args).unwrap();
+        assert_eq!(parsed.in_amount, 1_000);
+        assert_eq!(parsed.in_amount_per_cycle, 100);
+        assert_eq!(parsed.cycle_frequency, 60);
+        assert_eq!(parsed.min_out_amount, Some(10));
+        assert_eq!(parsed.max_out_amount, Some(500));
+        assert_eq!(parsed.start_at, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn parse_create_args_rejects_malformed_payload() {
+        let args = serde_json::json!({
+            "in_amount": "bad",
+            "in_amount_per_cycle": 100_u64,
+            "cycle_frequency": 60_i64
+        });
+        assert!(parse_create_args(&args).is_err());
+    }
+
+    #[test]
+    fn extract_order_pda_prefers_named_account() {
+        let accounts = vec![
+            account("idx0", None),
+            account("idx1", None),
+            account("named_dca", Some("dca")),
+        ];
+        let extracted = extract_order_pda(&accounts, "CloseDca").unwrap();
+        assert_eq!(extracted, "named_dca");
+    }
+
+    #[test]
+    fn extract_order_pda_uses_instruction_fallback_indexes() {
+        let open_accounts = vec![account("open_idx0", None)];
+        assert_eq!(
+            extract_order_pda(&open_accounts, "OpenDca").unwrap(),
+            "open_idx0"
+        );
+
+        let close_accounts = vec![account("ignore0", None), account("close_idx1", None)];
+        assert_eq!(
+            extract_order_pda(&close_accounts, "CloseDca").unwrap(),
+            "close_idx1"
+        );
+    }
+
+    #[test]
+    fn extract_order_pda_rejects_unknown_instruction() {
+        let err = extract_order_pda(&[account("a", None)], "Unknown").unwrap_err();
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "unknown DCA instruction: Unknown");
+    }
+
+    #[test]
+    fn extract_order_pda_rejects_out_of_bounds_fallback() {
+        let err = extract_order_pda(&[account("only0", None)], "CloseDca").unwrap_err();
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "DCA account index 1 out of bounds for CloseDca");
+    }
+
+    #[test]
+    fn extract_create_mints_prefers_named_accounts() {
+        let accounts = vec![
+            account("fallback_input", None),
+            account("fallback_output", None),
+            account("named_input", Some("input_mint")),
+            account("named_output", Some("output_mint")),
+        ];
+        let extracted = extract_create_mints(&accounts, "OpenDca").unwrap();
+        assert_eq!(extracted.input_mint, "named_input");
+        assert_eq!(extracted.output_mint, "named_output");
+    }
+
+    #[test]
+    fn extract_create_mints_uses_fallback_indexes_for_create_variants() {
+        let open_accounts = vec![
+            account("0", None),
+            account("1", None),
+            account("open_input", None),
+            account("open_output", None),
+        ];
+        let open = extract_create_mints(&open_accounts, "OpenDca").unwrap();
+        assert_eq!(open.input_mint, "open_input");
+        assert_eq!(open.output_mint, "open_output");
+
+        let open_v2_accounts = vec![
+            account("0", None),
+            account("1", None),
+            account("2", None),
+            account("open_v2_input", None),
+            account("open_v2_output", None),
+        ];
+        let open_v2 = extract_create_mints(&open_v2_accounts, "OpenDcaV2").unwrap();
+        assert_eq!(open_v2.input_mint, "open_v2_input");
+        assert_eq!(open_v2.output_mint, "open_v2_output");
+    }
+
+    #[test]
+    fn extract_create_mints_rejects_non_create_instruction() {
+        let err = extract_create_mints(&[], "CloseDca")
+            .err()
+            .expect("expected error");
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "not a DCA create instruction: CloseDca");
+    }
+
+    #[test]
+    fn extract_create_mints_rejects_missing_fallback_input_index() {
+        let err = extract_create_mints(&[], "OpenDca")
+            .err()
+            .expect("expected error");
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "DCA input_mint index 2 out of bounds");
+    }
+
+    #[test]
+    fn extract_create_mints_rejects_missing_fallback_output_index() {
+        let accounts = vec![account("0", None), account("1", None), account("2", None)];
+        let err = extract_create_mints(&accounts, "OpenDca")
+            .err()
+            .expect("expected error");
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "DCA output_mint index 3 out of bounds");
     }
 
     #[test]

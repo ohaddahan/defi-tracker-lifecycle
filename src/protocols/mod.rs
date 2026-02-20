@@ -179,6 +179,124 @@ mod tests {
         );
     }
 
+    #[test]
+    fn protocol_program_id_mapping_and_string_names_are_stable() {
+        let cases = [
+            (JUPITER_DCA_PROGRAM_ID, Protocol::Dca, "dca"),
+            (
+                JUPITER_LIMIT_ORDER_PROGRAM_ID,
+                Protocol::LimitV1,
+                "limit_v1",
+            ),
+            (
+                JUPITER_LIMIT_ORDER_2_PROGRAM_ID,
+                Protocol::LimitV2,
+                "limit_v2",
+            ),
+            (KAMINO_LIMIT_ORDER_PROGRAM_ID, Protocol::Kamino, "kamino"),
+        ];
+        for (program_id, expected_protocol, expected_name) in cases {
+            assert_eq!(
+                Protocol::from_program_id(program_id),
+                Some(expected_protocol)
+            );
+            assert_eq!(expected_protocol.as_str(), expected_name);
+        }
+
+        assert_eq!(Protocol::from_program_id("unknown_program"), None);
+        assert_eq!(
+            Protocol::all_program_ids(),
+            &[
+                JUPITER_DCA_PROGRAM_ID,
+                JUPITER_LIMIT_ORDER_PROGRAM_ID,
+                JUPITER_LIMIT_ORDER_2_PROGRAM_ID,
+                KAMINO_LIMIT_ORDER_PROGRAM_ID
+            ]
+        );
+    }
+
+    #[test]
+    fn event_type_strings_match_expected_labels() {
+        let cases = [
+            (EventType::Created, "created"),
+            (EventType::FillInitiated, "fill_initiated"),
+            (EventType::FillCompleted, "fill_completed"),
+            (EventType::Cancelled, "cancelled"),
+            (EventType::Expired, "expired"),
+            (EventType::Closed, "closed"),
+            (EventType::FeeCollected, "fee_collected"),
+            (EventType::Withdrawn, "withdrawn"),
+            (EventType::Deposited, "deposited"),
+        ];
+        for (event_type, expected_label) in cases {
+            assert_eq!(event_type.as_str(), expected_label);
+        }
+    }
+
+    #[test]
+    fn parse_accounts_supports_defaults_and_find_helpers() {
+        let accounts_json = serde_json::json!([
+            {
+                "pubkey": "signer_pubkey",
+                "is_signer": true,
+                "is_writable": true,
+                "name": "order"
+            },
+            {
+                "pubkey": "readonly_pubkey"
+            }
+        ]);
+
+        let parsed = parse_accounts(&accounts_json).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].pubkey, "signer_pubkey");
+        assert!(parsed[0].is_signer);
+        assert!(parsed[0].is_writable);
+        assert_eq!(parsed[0].name.as_deref(), Some("order"));
+
+        assert_eq!(parsed[1].pubkey, "readonly_pubkey");
+        assert!(!parsed[1].is_signer);
+        assert!(!parsed[1].is_writable);
+        assert!(parsed[1].name.is_none());
+
+        assert_eq!(find_signer(&parsed), Some("signer_pubkey"));
+        assert_eq!(
+            find_account_by_name(&parsed, "order").map(|a| a.pubkey.as_str()),
+            Some("signer_pubkey")
+        );
+        assert!(find_account_by_name(&parsed, "missing").is_none());
+    }
+
+    #[test]
+    fn parse_accounts_rejects_non_array() {
+        let err = parse_accounts(&serde_json::json!({"pubkey": "not-an-array"})).unwrap_err();
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "accounts is not an array");
+    }
+
+    #[test]
+    fn parse_accounts_rejects_missing_pubkey() {
+        let err = parse_accounts(&serde_json::json!([{"is_signer": true}])).unwrap_err();
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "account missing pubkey");
+    }
+
+    #[test]
+    fn find_signer_returns_none_when_no_signer_present() {
+        let accounts = vec![AccountInfo {
+            pubkey: "p1".to_string(),
+            is_signer: false,
+            is_writable: false,
+            name: Some("order".to_string()),
+        }];
+
+        assert_eq!(find_signer(&accounts), None);
+    }
+
     fn make_ix(name: &str) -> RawInstruction {
         RawInstruction {
             id: 1,

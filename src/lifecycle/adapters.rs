@@ -174,6 +174,33 @@ mod tests {
     use crate::protocols::{EventType, Protocol};
     use crate::types::{RawEvent, RawInstruction, ResolveContext};
 
+    fn make_instruction(name: &str) -> RawInstruction {
+        RawInstruction {
+            id: 1,
+            signature: "sig".to_string(),
+            instruction_index: 0,
+            program_id: "p".to_string(),
+            inner_program_id: "p".to_string(),
+            instruction_name: name.to_string(),
+            accounts: None,
+            args: None,
+            slot: 1,
+        }
+    }
+
+    fn make_event(event_name: &str, fields: Option<serde_json::Value>) -> RawEvent {
+        RawEvent {
+            id: 1,
+            signature: "sig".to_string(),
+            event_index: 0,
+            program_id: "p".to_string(),
+            inner_program_id: "p".to_string(),
+            event_name: event_name.to_string(),
+            fields,
+            slot: 1,
+        }
+    }
+
     #[test]
     fn adapter_selection_matches_protocol() {
         assert_eq!(adapter_for(Protocol::Dca).protocol(), Protocol::Dca);
@@ -185,18 +212,28 @@ mod tests {
     #[test]
     fn instruction_classifiers_map_known_names() {
         let dca = adapter_for(Protocol::Dca);
-        let ix = RawInstruction {
-            id: 1,
-            signature: "sig".to_string(),
-            instruction_index: 0,
-            program_id: "p".to_string(),
-            inner_program_id: "p".to_string(),
-            instruction_name: "OpenDca".to_string(),
-            accounts: None,
-            args: None,
-            slot: 1,
-        };
-        assert_eq!(dca.classify_instruction(&ix), Some(EventType::Created));
+        assert_eq!(
+            dca.classify_instruction(&make_instruction("OpenDca")),
+            Some(EventType::Created)
+        );
+
+        let limit_v1 = adapter_for(Protocol::LimitV1);
+        assert_eq!(
+            limit_v1.classify_instruction(&make_instruction("FillOrder")),
+            Some(EventType::FillCompleted)
+        );
+
+        let limit_v2 = adapter_for(Protocol::LimitV2);
+        assert_eq!(
+            limit_v2.classify_instruction(&make_instruction("PreFlashFillOrder")),
+            Some(EventType::FillInitiated)
+        );
+
+        let kamino = adapter_for(Protocol::Kamino);
+        assert_eq!(
+            kamino.classify_instruction(&make_instruction("CreateOrder")),
+            Some(EventType::Created)
+        );
     }
 
     #[test]
@@ -256,21 +293,18 @@ mod tests {
     fn kamino_resolve_uncorrelated_without_context() {
         let adapter = adapter_for(Protocol::Kamino);
         let ev = RawEvent {
-            id: 1,
             signature: "test_sig".to_string(),
-            event_index: 0,
-            program_id: "p".to_string(),
-            inner_program_id: "p".to_string(),
-            event_name: "OrderDisplayEvent".to_string(),
-            fields: Some(serde_json::json!({
-                "OrderDisplayEvent": {
-                    "remaining_input_amount": 0,
-                    "filled_output_amount": 100,
-                    "number_of_fills": 1,
-                    "status": 1
-                }
-            })),
-            slot: 1,
+            ..make_event(
+                "OrderDisplayEvent",
+                Some(serde_json::json!({
+                    "OrderDisplayEvent": {
+                        "remaining_input_amount": 0,
+                        "filled_output_amount": 100,
+                        "number_of_fills": 1,
+                        "status": 1
+                    }
+                })),
+            )
         };
         let ctx = ResolveContext {
             pre_fetched_order_pdas: None,
@@ -287,5 +321,101 @@ mod tests {
             CorrelationOutcome::Uncorrelated { .. }
         ));
         assert_eq!(payload, EventPayload::None);
+    }
+
+    #[test]
+    fn dca_adapter_resolves_opened_event() {
+        let adapter = adapter_for(Protocol::Dca);
+        let ev = make_event(
+            "OpenedEvent",
+            Some(serde_json::json!({
+                "OpenedEvent": { "dca_key": "dca_pda" }
+            })),
+        );
+
+        let (event_type, correlation, payload) = adapter
+            .classify_and_resolve_event(
+                &ev,
+                &ResolveContext {
+                    pre_fetched_order_pdas: None,
+                },
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(event_type, EventType::Created);
+        assert_eq!(
+            correlation,
+            CorrelationOutcome::Correlated(vec!["dca_pda".to_string()])
+        );
+        assert_eq!(payload, EventPayload::None);
+    }
+
+    #[test]
+    fn limit_adapters_resolve_create_events() {
+        let limit_v1 = adapter_for(Protocol::LimitV1);
+        let limit_v1_event = make_event(
+            "CreateOrderEvent",
+            Some(serde_json::json!({
+                "CreateOrderEvent": { "order_key": "v1_order" }
+            })),
+        );
+        let (event_type_v1, _, _) = limit_v1
+            .classify_and_resolve_event(
+                &limit_v1_event,
+                &ResolveContext {
+                    pre_fetched_order_pdas: None,
+                },
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(event_type_v1, EventType::Created);
+
+        let limit_v2 = adapter_for(Protocol::LimitV2);
+        let limit_v2_event = make_event(
+            "CreateOrderEvent",
+            Some(serde_json::json!({
+                "CreateOrderEvent": { "order_key": "v2_order" }
+            })),
+        );
+        let (event_type_v2, _, _) = limit_v2
+            .classify_and_resolve_event(
+                &limit_v2_event,
+                &ResolveContext {
+                    pre_fetched_order_pdas: None,
+                },
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(event_type_v2, EventType::Created);
+    }
+
+    #[test]
+    fn classify_and_resolve_event_returns_none_when_fields_are_absent() {
+        let ev = make_event("AnyEvent", None);
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: None,
+        };
+
+        assert!(
+            adapter_for(Protocol::Dca)
+                .classify_and_resolve_event(&ev, &ctx)
+                .is_none()
+        );
+        assert!(
+            adapter_for(Protocol::LimitV1)
+                .classify_and_resolve_event(&ev, &ctx)
+                .is_none()
+        );
+        assert!(
+            adapter_for(Protocol::LimitV2)
+                .classify_and_resolve_event(&ev, &ctx)
+                .is_none()
+        );
+        assert!(
+            adapter_for(Protocol::Kamino)
+                .classify_and_resolve_event(&ev, &ctx)
+                .is_none()
+        );
     }
 }

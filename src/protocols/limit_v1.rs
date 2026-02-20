@@ -259,6 +259,15 @@ pub fn classify_decoded(
 mod tests {
     use super::*;
 
+    fn account(pubkey: &str, name: Option<&str>) -> AccountInfo {
+        AccountInfo {
+            pubkey: pubkey.to_string(),
+            is_signer: false,
+            is_writable: false,
+            name: name.map(str::to_string),
+        }
+    }
+
     #[test]
     fn classify_known_instructions_via_envelope() {
         let cases = [
@@ -379,12 +388,162 @@ mod tests {
     }
 
     #[test]
+    fn resolve_trade_event_defaults_missing_taker() {
+        let fields = serde_json::json!({
+            "TradeEvent": {
+                "order_key": "order",
+                "in_amount": 10_u64,
+                "out_amount": 5_u64,
+                "remaining_in_amount": 1_u64,
+                "remaining_out_amount": 0_u64
+            }
+        });
+        let (_, _, payload) = resolve_event_envelope(&fields).unwrap().unwrap();
+        let EventPayload::LimitFill { counterparty, .. } = payload else {
+            panic!("expected LimitFill");
+        };
+        assert_eq!(counterparty, "unknown");
+    }
+
+    #[test]
     fn parse_create_args_rejects_amount_overflow() {
         let args = serde_json::json!({
             "making_amount": (i64::MAX as u64) + 1,
             "taking_amount": 1_u64
         });
         assert!(parse_create_args(&args).is_err());
+    }
+
+    #[test]
+    fn parse_create_args_accepts_valid_payload() {
+        let args = serde_json::json!({
+            "making_amount": 5_000_u64,
+            "taking_amount": 4_500_u64,
+            "expired_at": 1_700_000_000_i64
+        });
+        let parsed = parse_create_args(&args).unwrap();
+        assert_eq!(parsed.making_amount, 5_000);
+        assert_eq!(parsed.taking_amount, 4_500);
+        assert_eq!(parsed.expired_at, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn parse_create_args_rejects_malformed_payload() {
+        let args = serde_json::json!({
+            "making_amount": "bad",
+            "taking_amount": 1_u64
+        });
+        assert!(parse_create_args(&args).is_err());
+    }
+
+    #[test]
+    fn extract_order_pda_prefers_named_account() {
+        let accounts = vec![
+            account("idx0", None),
+            account("idx2", None),
+            account("named_order", Some("order")),
+        ];
+        let extracted = extract_order_pda(&accounts, "InitializeOrder").unwrap();
+        assert_eq!(extracted, "named_order");
+    }
+
+    #[test]
+    fn extract_order_pda_uses_fallback_indexes() {
+        let init_accounts = vec![
+            account("0", None),
+            account("1", None),
+            account("init_idx2", None),
+        ];
+        assert_eq!(
+            extract_order_pda(&init_accounts, "InitializeOrder").unwrap(),
+            "init_idx2"
+        );
+
+        let fill_accounts = vec![account("fill_idx0", None)];
+        assert_eq!(
+            extract_order_pda(&fill_accounts, "FillOrder").unwrap(),
+            "fill_idx0"
+        );
+    }
+
+    #[test]
+    fn extract_order_pda_rejects_unknown_instruction() {
+        let err = extract_order_pda(&[], "Unknown").unwrap_err();
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "unknown Limit v1 instruction: Unknown");
+    }
+
+    #[test]
+    fn extract_order_pda_rejects_out_of_bounds_index() {
+        let err = extract_order_pda(&[], "InitializeOrder").unwrap_err();
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(
+            reason,
+            "Limit v1 account index 2 out of bounds for InitializeOrder"
+        );
+    }
+
+    #[test]
+    fn extract_create_mints_prefers_named_accounts() {
+        let accounts = vec![
+            account("idx5", None),
+            account("idx8", None),
+            account("named_input", Some("input_mint")),
+            account("named_output", Some("output_mint")),
+        ];
+        let extracted = extract_create_mints(&accounts).unwrap();
+        assert_eq!(extracted.input_mint, "named_input");
+        assert_eq!(extracted.output_mint, "named_output");
+    }
+
+    #[test]
+    fn extract_create_mints_uses_fallback_indexes() {
+        let accounts = vec![
+            account("0", None),
+            account("1", None),
+            account("2", None),
+            account("3", None),
+            account("4", None),
+            account("fallback_input", None),
+            account("6", None),
+            account("7", None),
+            account("fallback_output", None),
+        ];
+        let extracted = extract_create_mints(&accounts).unwrap();
+        assert_eq!(extracted.input_mint, "fallback_input");
+        assert_eq!(extracted.output_mint, "fallback_output");
+    }
+
+    #[test]
+    fn extract_create_mints_rejects_missing_input_fallback_index() {
+        let err = extract_create_mints(&[]).err().expect("expected error");
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "Limit v1 input_mint index 5 out of bounds");
+    }
+
+    #[test]
+    fn extract_create_mints_rejects_missing_output_fallback_index() {
+        let accounts = vec![
+            account("0", None),
+            account("1", None),
+            account("2", None),
+            account("3", None),
+            account("4", None),
+            account("fallback_input", None),
+        ];
+        let err = extract_create_mints(&accounts)
+            .err()
+            .expect("expected error");
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "Limit v1 output_mint index 8 out of bounds");
     }
 
     #[test]

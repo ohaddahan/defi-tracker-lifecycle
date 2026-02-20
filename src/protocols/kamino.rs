@@ -283,6 +283,15 @@ pub fn classify_decoded(
 mod tests {
     use super::*;
 
+    fn account(pubkey: &str, name: Option<&str>) -> AccountInfo {
+        AccountInfo {
+            pubkey: pubkey.to_string(),
+            is_signer: false,
+            is_writable: false,
+            name: name.map(str::to_string),
+        }
+    }
+
     #[test]
     fn classify_known_instructions_via_envelope() {
         let cases = [
@@ -449,6 +458,122 @@ mod tests {
     }
 
     #[test]
+    fn extract_order_pda_prefers_named_account() {
+        let accounts = vec![
+            account("idx3", None),
+            account("idx4", None),
+            account("named_order", Some("order")),
+        ];
+        let extracted = extract_order_pda(&accounts, "TakeOrder").unwrap();
+        assert_eq!(extracted, "named_order");
+    }
+
+    #[test]
+    fn extract_order_pda_supports_all_known_fallback_indexes() {
+        let create_accounts = vec![
+            account("0", None),
+            account("1", None),
+            account("2", None),
+            account("create_idx3", None),
+        ];
+        assert_eq!(
+            extract_order_pda(&create_accounts, "CreateOrder").unwrap(),
+            "create_idx3"
+        );
+
+        let take_accounts = vec![
+            account("0", None),
+            account("1", None),
+            account("2", None),
+            account("3", None),
+            account("take_idx4", None),
+        ];
+        assert_eq!(
+            extract_order_pda(&take_accounts, "TakeOrder").unwrap(),
+            "take_idx4"
+        );
+
+        let close_accounts = vec![account("0", None), account("close_idx1", None)];
+        assert_eq!(
+            extract_order_pda(&close_accounts, "CloseOrderAndClaimTip").unwrap(),
+            "close_idx1"
+        );
+    }
+
+    #[test]
+    fn extract_order_pda_rejects_unknown_instruction() {
+        let err = extract_order_pda(&[], "Unknown").unwrap_err();
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "unknown Kamino instruction: Unknown");
+    }
+
+    #[test]
+    fn extract_order_pda_rejects_out_of_bounds_index() {
+        let err = extract_order_pda(&[], "TakeOrder").unwrap_err();
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "Kamino account index 4 out of bounds for TakeOrder");
+    }
+
+    #[test]
+    fn extract_create_mints_prefers_named_accounts() {
+        let accounts = vec![
+            account("idx4", None),
+            account("idx5", None),
+            account("named_input", Some("input_mint")),
+            account("named_output", Some("output_mint")),
+        ];
+        let extracted = extract_create_mints(&accounts).unwrap();
+        assert_eq!(extracted.input_mint, "named_input");
+        assert_eq!(extracted.output_mint, "named_output");
+    }
+
+    #[test]
+    fn extract_create_mints_uses_fallback_indexes() {
+        let accounts = vec![
+            account("0", None),
+            account("1", None),
+            account("2", None),
+            account("3", None),
+            account("fallback_input", None),
+            account("fallback_output", None),
+        ];
+        let extracted = extract_create_mints(&accounts).unwrap();
+        assert_eq!(extracted.input_mint, "fallback_input");
+        assert_eq!(extracted.output_mint, "fallback_output");
+    }
+
+    #[test]
+    fn extract_create_mints_rejects_missing_input_fallback_index() {
+        let err = extract_create_mints(&[]).err().expect("expected error");
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "Kamino input_mint index 4 out of bounds");
+    }
+
+    #[test]
+    fn extract_create_mints_rejects_missing_output_fallback_index() {
+        let accounts = vec![
+            account("0", None),
+            account("1", None),
+            account("2", None),
+            account("3", None),
+            account("only_input", None),
+        ];
+        let err = extract_create_mints(&accounts)
+            .err()
+            .expect("expected error");
+        let Error::Protocol { reason } = err else {
+            panic!("expected protocol error");
+        };
+        assert_eq!(reason, "Kamino output_mint index 5 out of bounds");
+    }
+
+    #[test]
     fn parses_known_display_status_codes() {
         assert_eq!(parse_display_status(0).unwrap(), KaminoDisplayStatus::Open);
         assert_eq!(
@@ -537,6 +662,28 @@ mod tests {
             "input_amount": (i64::MAX as u64) + 1,
             "output_amount": 1_u64,
             "order_type": 0_u8
+        });
+        assert!(parse_create_args(&args).is_err());
+    }
+
+    #[test]
+    fn parse_create_args_accepts_valid_payload() {
+        let args = serde_json::json!({
+            "input_amount": 5_000_u64,
+            "output_amount": 4_500_u64,
+            "order_type": 2_u8
+        });
+        let parsed = parse_create_args(&args).unwrap();
+        assert_eq!(parsed.input_amount, 5_000);
+        assert_eq!(parsed.output_amount, 4_500);
+        assert_eq!(parsed.order_type, 2);
+    }
+
+    #[test]
+    fn parse_create_args_rejects_malformed_payload() {
+        let args = serde_json::json!({
+            "input_amount": "bad",
+            "output_amount": 4_500_u64
         });
         assert!(parse_create_args(&args).is_err());
     }
