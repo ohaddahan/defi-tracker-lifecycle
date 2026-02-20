@@ -2,10 +2,7 @@ use crate::error::Error;
 use crate::lifecycle::adapters::{
     CorrelationOutcome, EventPayload, ProtocolAdapter, dca_closed_terminal_status,
 };
-use crate::protocols::{
-    AccountInfo, EventType, Protocol, checked_u64_to_i64, contains_known_variant,
-    find_account_by_name,
-};
+use crate::protocols::{AccountInfo, EventType, Protocol, ProtocolHelpers};
 use crate::types::{RawEvent, RawInstruction, ResolveContext};
 use strum::VariantNames;
 
@@ -37,6 +34,61 @@ pub enum DcaInstructionKind {
 
 #[derive(Debug)]
 pub struct DcaAdapter;
+
+#[derive(serde::Deserialize)]
+pub struct FilledEventFields {
+    dca_key: String,
+    in_amount: u64,
+    out_amount: u64,
+}
+
+#[derive(serde::Deserialize)]
+pub struct ClosedEventFields {
+    dca_key: String,
+    user_closed: bool,
+    unfilled_amount: u64,
+}
+
+#[derive(serde::Deserialize)]
+pub struct DcaKeyHolder {
+    dca_key: String,
+}
+
+pub struct DcaClosedEvent {
+    pub order_pda: String,
+    pub user_closed: bool,
+    pub unfilled_amount: i64,
+}
+
+pub struct DcaFillEvent {
+    pub order_pda: String,
+    pub in_amount: i64,
+    pub out_amount: i64,
+}
+
+pub struct DcaCreateArgs {
+    pub in_amount: i64,
+    pub in_amount_per_cycle: i64,
+    pub cycle_frequency: i64,
+    pub min_out_amount: Option<i64>,
+    pub max_out_amount: Option<i64>,
+    pub start_at: Option<i64>,
+}
+
+pub struct DcaCreateMints {
+    pub input_mint: String,
+    pub output_mint: String,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenDcaFields {
+    in_amount: u64,
+    in_amount_per_cycle: u64,
+    cycle_frequency: i64,
+    min_out_amount: Option<u64>,
+    max_out_amount: Option<u64>,
+    start_at: Option<i64>,
+}
 
 impl ProtocolAdapter for DcaAdapter {
     fn protocol(&self) -> Protocol {
@@ -75,7 +127,7 @@ impl ProtocolAdapter for DcaAdapter {
         let envelope: DcaEventEnvelope = match serde_json::from_value(fields.clone()) {
             Ok(e) => e,
             Err(err) => {
-                if !contains_known_variant(fields, DcaEventEnvelope::VARIANTS) {
+                if !ProtocolHelpers::contains_known_variant(fields, DcaEventEnvelope::VARIANTS) {
                     return None;
                 }
                 return Some(Err(Error::Protocol {
@@ -84,262 +136,216 @@ impl ProtocolAdapter for DcaAdapter {
             }
         };
 
-        Some(resolve_dca_event(envelope))
+        Some(Self::resolve_event(envelope))
     }
 }
 
-fn resolve_dca_event(
-    envelope: DcaEventEnvelope,
-) -> Result<(EventType, CorrelationOutcome, EventPayload), Error> {
-    match envelope {
-        DcaEventEnvelope::FilledEvent(FilledEventFields {
-            dca_key,
-            in_amount,
-            out_amount,
-        }) => Ok((
-            EventType::FillCompleted,
-            CorrelationOutcome::Correlated(vec![dca_key]),
-            EventPayload::DcaFill {
-                in_amount: checked_u64_to_i64(in_amount, "in_amount")?,
-                out_amount: checked_u64_to_i64(out_amount, "out_amount")?,
-            },
-        )),
-        DcaEventEnvelope::ClosedEvent(ClosedEventFields {
-            dca_key,
-            user_closed,
-            unfilled_amount,
-        }) => {
-            let closed = DcaClosedEvent {
-                order_pda: dca_key,
+impl DcaAdapter {
+    fn resolve_event(
+        envelope: DcaEventEnvelope,
+    ) -> Result<(EventType, CorrelationOutcome, EventPayload), Error> {
+        match envelope {
+            DcaEventEnvelope::FilledEvent(FilledEventFields {
+                dca_key,
+                in_amount,
+                out_amount,
+            }) => Ok((
+                EventType::FillCompleted,
+                CorrelationOutcome::Correlated(vec![dca_key]),
+                EventPayload::DcaFill {
+                    in_amount: ProtocolHelpers::checked_u64_to_i64(in_amount, "in_amount")?,
+                    out_amount: ProtocolHelpers::checked_u64_to_i64(out_amount, "out_amount")?,
+                },
+            )),
+            DcaEventEnvelope::ClosedEvent(ClosedEventFields {
+                dca_key,
                 user_closed,
-                unfilled_amount: checked_u64_to_i64(unfilled_amount, "unfilled_amount")?,
-            };
-            let status = dca_closed_terminal_status(&closed);
-            Ok((
-                EventType::Closed,
-                CorrelationOutcome::Correlated(vec![closed.order_pda]),
-                EventPayload::DcaClosed { status },
-            ))
+                unfilled_amount,
+            }) => {
+                let closed = DcaClosedEvent {
+                    order_pda: dca_key,
+                    user_closed,
+                    unfilled_amount: ProtocolHelpers::checked_u64_to_i64(
+                        unfilled_amount,
+                        "unfilled_amount",
+                    )?,
+                };
+                let status = dca_closed_terminal_status(&closed);
+                Ok((
+                    EventType::Closed,
+                    CorrelationOutcome::Correlated(vec![closed.order_pda]),
+                    EventPayload::DcaClosed { status },
+                ))
+            }
+            DcaEventEnvelope::OpenedEvent(DcaKeyHolder { dca_key }) => Ok((
+                EventType::Created,
+                CorrelationOutcome::Correlated(vec![dca_key]),
+                EventPayload::None,
+            )),
+            DcaEventEnvelope::CollectedFeeEvent(DcaKeyHolder { dca_key }) => Ok((
+                EventType::FeeCollected,
+                CorrelationOutcome::Correlated(vec![dca_key]),
+                EventPayload::None,
+            )),
+            DcaEventEnvelope::WithdrawEvent(DcaKeyHolder { dca_key }) => Ok((
+                EventType::Withdrawn,
+                CorrelationOutcome::Correlated(vec![dca_key]),
+                EventPayload::None,
+            )),
+            DcaEventEnvelope::DepositEvent(DcaKeyHolder { dca_key }) => Ok((
+                EventType::Deposited,
+                CorrelationOutcome::Correlated(vec![dca_key]),
+                EventPayload::None,
+            )),
         }
-        DcaEventEnvelope::OpenedEvent(DcaKeyHolder { dca_key }) => Ok((
-            EventType::Created,
-            CorrelationOutcome::Correlated(vec![dca_key]),
-            EventPayload::None,
-        )),
-        DcaEventEnvelope::CollectedFeeEvent(DcaKeyHolder { dca_key }) => Ok((
-            EventType::FeeCollected,
-            CorrelationOutcome::Correlated(vec![dca_key]),
-            EventPayload::None,
-        )),
-        DcaEventEnvelope::WithdrawEvent(DcaKeyHolder { dca_key }) => Ok((
-            EventType::Withdrawn,
-            CorrelationOutcome::Correlated(vec![dca_key]),
-            EventPayload::None,
-        )),
-        DcaEventEnvelope::DepositEvent(DcaKeyHolder { dca_key }) => Ok((
-            EventType::Deposited,
-            CorrelationOutcome::Correlated(vec![dca_key]),
-            EventPayload::None,
-        )),
-    }
-}
-
-pub fn extract_order_pda(
-    accounts: &[AccountInfo],
-    instruction_name: &str,
-) -> Result<String, Error> {
-    if let Some(acc) = find_account_by_name(accounts, "dca") {
-        return Ok(acc.pubkey.clone());
     }
 
-    let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
-    let kind: DcaInstructionKind =
-        serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
-            reason: format!("unknown DCA instruction: {instruction_name}"),
-        })?;
+    pub fn extract_order_pda(
+        accounts: &[AccountInfo],
+        instruction_name: &str,
+    ) -> Result<String, Error> {
+        if let Some(acc) = ProtocolHelpers::find_account_by_name(accounts, "dca") {
+            return Ok(acc.pubkey.clone());
+        }
 
-    let idx = match kind {
-        DcaInstructionKind::OpenDca(_) | DcaInstructionKind::OpenDcaV2(_) => 0,
-        DcaInstructionKind::InitiateFlashFill(_)
-        | DcaInstructionKind::FulfillFlashFill(_)
-        | DcaInstructionKind::InitiateDlmmFill(_)
-        | DcaInstructionKind::FulfillDlmmFill(_) => 1,
-        DcaInstructionKind::CloseDca(_) | DcaInstructionKind::EndAndClose(_) => 1,
-        DcaInstructionKind::Transfer(_)
-        | DcaInstructionKind::Deposit(_)
-        | DcaInstructionKind::Withdraw(_)
-        | DcaInstructionKind::WithdrawFees(_) => {
-            return Err(Error::Protocol {
-                reason: format!("DCA instruction {instruction_name} has no order PDA"),
+        let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
+        let kind: DcaInstructionKind =
+            serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
+                reason: format!("unknown DCA instruction: {instruction_name}"),
+            })?;
+
+        let idx = match kind {
+            DcaInstructionKind::OpenDca(_) | DcaInstructionKind::OpenDcaV2(_) => 0,
+            DcaInstructionKind::InitiateFlashFill(_)
+            | DcaInstructionKind::FulfillFlashFill(_)
+            | DcaInstructionKind::InitiateDlmmFill(_)
+            | DcaInstructionKind::FulfillDlmmFill(_) => 1,
+            DcaInstructionKind::CloseDca(_) | DcaInstructionKind::EndAndClose(_) => 1,
+            DcaInstructionKind::Transfer(_)
+            | DcaInstructionKind::Deposit(_)
+            | DcaInstructionKind::Withdraw(_)
+            | DcaInstructionKind::WithdrawFees(_) => {
+                return Err(Error::Protocol {
+                    reason: format!("DCA instruction {instruction_name} has no order PDA"),
+                });
+            }
+        };
+
+        accounts
+            .get(idx)
+            .map(|a| a.pubkey.clone())
+            .ok_or_else(|| Error::Protocol {
+                reason: format!("DCA account index {idx} out of bounds for {instruction_name}"),
+            })
+    }
+
+    pub fn extract_create_mints(
+        accounts: &[AccountInfo],
+        instruction_name: &str,
+    ) -> Result<DcaCreateMints, Error> {
+        let input_mint =
+            ProtocolHelpers::find_account_by_name(accounts, "input_mint").map(|a| a.pubkey.clone());
+        let output_mint = ProtocolHelpers::find_account_by_name(accounts, "output_mint")
+            .map(|a| a.pubkey.clone());
+
+        if let (Some(input_mint), Some(output_mint)) = (input_mint, output_mint) {
+            return Ok(DcaCreateMints {
+                input_mint,
+                output_mint,
             });
         }
-    };
 
-    accounts
-        .get(idx)
-        .map(|a| a.pubkey.clone())
-        .ok_or_else(|| Error::Protocol {
-            reason: format!("DCA account index {idx} out of bounds for {instruction_name}"),
-        })
-}
+        let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
+        let kind: DcaInstructionKind =
+            serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
+                reason: format!("unknown DCA instruction: {instruction_name}"),
+            })?;
 
-pub struct DcaCreateArgs {
-    pub in_amount: i64,
-    pub in_amount_per_cycle: i64,
-    pub cycle_frequency: i64,
-    pub min_out_amount: Option<i64>,
-    pub max_out_amount: Option<i64>,
-    pub start_at: Option<i64>,
-}
+        let (input_idx, output_idx) = match kind {
+            DcaInstructionKind::OpenDca(_) => (2, 3),
+            DcaInstructionKind::OpenDcaV2(_) => (3, 4),
+            _ => {
+                return Err(Error::Protocol {
+                    reason: format!("not a DCA create instruction: {instruction_name}"),
+                });
+            }
+        };
 
-pub struct DcaCreateMints {
-    pub input_mint: String,
-    pub output_mint: String,
-}
+        let input_mint = accounts
+            .get(input_idx)
+            .map(|a| a.pubkey.clone())
+            .ok_or_else(|| Error::Protocol {
+                reason: format!("DCA input_mint index {input_idx} out of bounds"),
+            })?;
+        let output_mint = accounts
+            .get(output_idx)
+            .map(|a| a.pubkey.clone())
+            .ok_or_else(|| Error::Protocol {
+                reason: format!("DCA output_mint index {output_idx} out of bounds"),
+            })?;
 
-pub fn extract_create_mints(
-    accounts: &[AccountInfo],
-    instruction_name: &str,
-) -> Result<DcaCreateMints, Error> {
-    let input_mint = find_account_by_name(accounts, "input_mint").map(|a| a.pubkey.clone());
-    let output_mint = find_account_by_name(accounts, "output_mint").map(|a| a.pubkey.clone());
-
-    if let (Some(input_mint), Some(output_mint)) = (input_mint, output_mint) {
-        return Ok(DcaCreateMints {
+        Ok(DcaCreateMints {
             input_mint,
             output_mint,
-        });
+        })
     }
 
-    let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
-    let kind: DcaInstructionKind =
-        serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
-            reason: format!("unknown DCA instruction: {instruction_name}"),
+    pub fn parse_create_args(args: &serde_json::Value) -> Result<DcaCreateArgs, Error> {
+        let OpenDcaFields {
+            in_amount,
+            in_amount_per_cycle,
+            cycle_frequency,
+            min_out_amount,
+            max_out_amount,
+            start_at,
+        } = serde_json::from_value(args.clone()).map_err(|e| Error::Protocol {
+            reason: format!("failed to parse DCA create args: {e}"),
         })?;
 
-    let (input_idx, output_idx) = match kind {
-        DcaInstructionKind::OpenDca(_) => (2, 3),
-        DcaInstructionKind::OpenDcaV2(_) => (3, 4),
-        _ => {
-            return Err(Error::Protocol {
-                reason: format!("not a DCA create instruction: {instruction_name}"),
-            });
+        Ok(DcaCreateArgs {
+            in_amount: ProtocolHelpers::checked_u64_to_i64(in_amount, "in_amount")?,
+            in_amount_per_cycle: ProtocolHelpers::checked_u64_to_i64(
+                in_amount_per_cycle,
+                "in_amount_per_cycle",
+            )?,
+            cycle_frequency,
+            min_out_amount: min_out_amount
+                .map(|v| ProtocolHelpers::checked_u64_to_i64(v, "min_out_amount"))
+                .transpose()?,
+            max_out_amount: max_out_amount
+                .map(|v| ProtocolHelpers::checked_u64_to_i64(v, "max_out_amount"))
+                .transpose()?,
+            start_at,
+        })
+    }
+
+    #[cfg(test)]
+    pub fn classify_decoded(
+        decoded: &carbon_jupiter_dca_decoder::instructions::JupiterDcaInstruction,
+    ) -> Option<EventType> {
+        use carbon_jupiter_dca_decoder::instructions::JupiterDcaInstruction;
+        match decoded {
+            JupiterDcaInstruction::OpenDca(_) | JupiterDcaInstruction::OpenDcaV2(_) => {
+                Some(EventType::Created)
+            }
+            JupiterDcaInstruction::InitiateFlashFill(_)
+            | JupiterDcaInstruction::InitiateDlmmFill(_) => Some(EventType::FillInitiated),
+            JupiterDcaInstruction::FulfillFlashFill(_)
+            | JupiterDcaInstruction::FulfillDlmmFill(_) => Some(EventType::FillCompleted),
+            JupiterDcaInstruction::CloseDca(_) | JupiterDcaInstruction::EndAndClose(_) => {
+                Some(EventType::Closed)
+            }
+            JupiterDcaInstruction::OpenedEvent(_) => Some(EventType::Created),
+            JupiterDcaInstruction::FilledEvent(_) => Some(EventType::FillCompleted),
+            JupiterDcaInstruction::ClosedEvent(_) => Some(EventType::Closed),
+            JupiterDcaInstruction::CollectedFeeEvent(_) => Some(EventType::FeeCollected),
+            JupiterDcaInstruction::WithdrawEvent(_) => Some(EventType::Withdrawn),
+            JupiterDcaInstruction::DepositEvent(_) => Some(EventType::Deposited),
+            JupiterDcaInstruction::Transfer(_)
+            | JupiterDcaInstruction::Deposit(_)
+            | JupiterDcaInstruction::Withdraw(_)
+            | JupiterDcaInstruction::WithdrawFees(_) => None,
         }
-    };
-
-    let input_mint = accounts
-        .get(input_idx)
-        .map(|a| a.pubkey.clone())
-        .ok_or_else(|| Error::Protocol {
-            reason: format!("DCA input_mint index {input_idx} out of bounds"),
-        })?;
-    let output_mint = accounts
-        .get(output_idx)
-        .map(|a| a.pubkey.clone())
-        .ok_or_else(|| Error::Protocol {
-            reason: format!("DCA output_mint index {output_idx} out of bounds"),
-        })?;
-
-    Ok(DcaCreateMints {
-        input_mint,
-        output_mint,
-    })
-}
-
-#[derive(serde::Deserialize)]
-pub struct FilledEventFields {
-    dca_key: String,
-    in_amount: u64,
-    out_amount: u64,
-}
-
-#[derive(serde::Deserialize)]
-pub struct ClosedEventFields {
-    dca_key: String,
-    user_closed: bool,
-    unfilled_amount: u64,
-}
-
-#[derive(serde::Deserialize)]
-pub struct DcaKeyHolder {
-    dca_key: String,
-}
-
-pub struct DcaClosedEvent {
-    pub order_pda: String,
-    pub user_closed: bool,
-    pub unfilled_amount: i64,
-}
-
-pub struct DcaFillEvent {
-    pub order_pda: String,
-    pub in_amount: i64,
-    pub out_amount: i64,
-}
-
-#[derive(serde::Deserialize)]
-struct OpenDcaFields {
-    in_amount: u64,
-    in_amount_per_cycle: u64,
-    cycle_frequency: i64,
-    min_out_amount: Option<u64>,
-    max_out_amount: Option<u64>,
-    start_at: Option<i64>,
-}
-
-pub fn parse_create_args(args: &serde_json::Value) -> Result<DcaCreateArgs, Error> {
-    let OpenDcaFields {
-        in_amount,
-        in_amount_per_cycle,
-        cycle_frequency,
-        min_out_amount,
-        max_out_amount,
-        start_at,
-    } = serde_json::from_value(args.clone()).map_err(|e| Error::Protocol {
-        reason: format!("failed to parse DCA create args: {e}"),
-    })?;
-
-    Ok(DcaCreateArgs {
-        in_amount: checked_u64_to_i64(in_amount, "in_amount")?,
-        in_amount_per_cycle: checked_u64_to_i64(in_amount_per_cycle, "in_amount_per_cycle")?,
-        cycle_frequency,
-        min_out_amount: min_out_amount
-            .map(|v| checked_u64_to_i64(v, "min_out_amount"))
-            .transpose()?,
-        max_out_amount: max_out_amount
-            .map(|v| checked_u64_to_i64(v, "max_out_amount"))
-            .transpose()?,
-        start_at,
-    })
-}
-
-#[cfg(test)]
-pub fn classify_decoded(
-    decoded: &carbon_jupiter_dca_decoder::instructions::JupiterDcaInstruction,
-) -> Option<EventType> {
-    use carbon_jupiter_dca_decoder::instructions::JupiterDcaInstruction;
-    match decoded {
-        JupiterDcaInstruction::OpenDca(_) | JupiterDcaInstruction::OpenDcaV2(_) => {
-            Some(EventType::Created)
-        }
-        JupiterDcaInstruction::InitiateFlashFill(_)
-        | JupiterDcaInstruction::InitiateDlmmFill(_) => Some(EventType::FillInitiated),
-        JupiterDcaInstruction::FulfillFlashFill(_) | JupiterDcaInstruction::FulfillDlmmFill(_) => {
-            Some(EventType::FillCompleted)
-        }
-        JupiterDcaInstruction::CloseDca(_) | JupiterDcaInstruction::EndAndClose(_) => {
-            Some(EventType::Closed)
-        }
-        JupiterDcaInstruction::OpenedEvent(_) => Some(EventType::Created),
-        JupiterDcaInstruction::FilledEvent(_) => Some(EventType::FillCompleted),
-        JupiterDcaInstruction::ClosedEvent(_) => Some(EventType::Closed),
-        JupiterDcaInstruction::CollectedFeeEvent(_) => Some(EventType::FeeCollected),
-        JupiterDcaInstruction::WithdrawEvent(_) => Some(EventType::Withdrawn),
-        JupiterDcaInstruction::DepositEvent(_) => Some(EventType::Deposited),
-        JupiterDcaInstruction::Transfer(_)
-        | JupiterDcaInstruction::Deposit(_)
-        | JupiterDcaInstruction::Withdraw(_)
-        | JupiterDcaInstruction::WithdrawFees(_) => None,
     }
 }
 
@@ -530,7 +536,7 @@ mod tests {
             "min_out_amount": 1_u64,
             "max_out_amount": 1_u64
         });
-        assert!(parse_create_args(&args).is_err());
+        assert!(DcaAdapter::parse_create_args(&args).is_err());
     }
 
     #[test]
@@ -543,7 +549,7 @@ mod tests {
             "max_out_amount": 500_u64,
             "start_at": 1_700_000_000_i64
         });
-        let parsed = parse_create_args(&args).unwrap();
+        let parsed = DcaAdapter::parse_create_args(&args).unwrap();
         assert_eq!(parsed.in_amount, 1_000);
         assert_eq!(parsed.in_amount_per_cycle, 100);
         assert_eq!(parsed.cycle_frequency, 60);
@@ -559,7 +565,7 @@ mod tests {
             "in_amount_per_cycle": 100_u64,
             "cycle_frequency": 60_i64
         });
-        assert!(parse_create_args(&args).is_err());
+        assert!(DcaAdapter::parse_create_args(&args).is_err());
     }
 
     #[test]
@@ -569,7 +575,7 @@ mod tests {
             account("idx1", None),
             account("named_dca", Some("dca")),
         ];
-        let extracted = extract_order_pda(&accounts, "CloseDca").unwrap();
+        let extracted = DcaAdapter::extract_order_pda(&accounts, "CloseDca").unwrap();
         assert_eq!(extracted, "named_dca");
     }
 
@@ -577,20 +583,20 @@ mod tests {
     fn extract_order_pda_uses_instruction_fallback_indexes() {
         let open_accounts = vec![account("open_idx0", None)];
         assert_eq!(
-            extract_order_pda(&open_accounts, "OpenDca").unwrap(),
+            DcaAdapter::extract_order_pda(&open_accounts, "OpenDca").unwrap(),
             "open_idx0"
         );
 
         let close_accounts = vec![account("ignore0", None), account("close_idx1", None)];
         assert_eq!(
-            extract_order_pda(&close_accounts, "CloseDca").unwrap(),
+            DcaAdapter::extract_order_pda(&close_accounts, "CloseDca").unwrap(),
             "close_idx1"
         );
     }
 
     #[test]
     fn extract_order_pda_rejects_unknown_instruction() {
-        let err = extract_order_pda(&[account("a", None)], "Unknown").unwrap_err();
+        let err = DcaAdapter::extract_order_pda(&[account("a", None)], "Unknown").unwrap_err();
         let Error::Protocol { reason } = err else {
             panic!("expected protocol error");
         };
@@ -599,7 +605,7 @@ mod tests {
 
     #[test]
     fn extract_order_pda_rejects_out_of_bounds_fallback() {
-        let err = extract_order_pda(&[account("only0", None)], "CloseDca").unwrap_err();
+        let err = DcaAdapter::extract_order_pda(&[account("only0", None)], "CloseDca").unwrap_err();
         let Error::Protocol { reason } = err else {
             panic!("expected protocol error");
         };
@@ -614,7 +620,7 @@ mod tests {
             account("named_input", Some("input_mint")),
             account("named_output", Some("output_mint")),
         ];
-        let extracted = extract_create_mints(&accounts, "OpenDca").unwrap();
+        let extracted = DcaAdapter::extract_create_mints(&accounts, "OpenDca").unwrap();
         assert_eq!(extracted.input_mint, "named_input");
         assert_eq!(extracted.output_mint, "named_output");
     }
@@ -627,7 +633,7 @@ mod tests {
             account("open_input", None),
             account("open_output", None),
         ];
-        let open = extract_create_mints(&open_accounts, "OpenDca").unwrap();
+        let open = DcaAdapter::extract_create_mints(&open_accounts, "OpenDca").unwrap();
         assert_eq!(open.input_mint, "open_input");
         assert_eq!(open.output_mint, "open_output");
 
@@ -638,14 +644,14 @@ mod tests {
             account("open_v2_input", None),
             account("open_v2_output", None),
         ];
-        let open_v2 = extract_create_mints(&open_v2_accounts, "OpenDcaV2").unwrap();
+        let open_v2 = DcaAdapter::extract_create_mints(&open_v2_accounts, "OpenDcaV2").unwrap();
         assert_eq!(open_v2.input_mint, "open_v2_input");
         assert_eq!(open_v2.output_mint, "open_v2_output");
     }
 
     #[test]
     fn extract_create_mints_rejects_non_create_instruction() {
-        let err = extract_create_mints(&[], "CloseDca")
+        let err = DcaAdapter::extract_create_mints(&[], "CloseDca")
             .err()
             .expect("expected error");
         let Error::Protocol { reason } = err else {
@@ -656,7 +662,7 @@ mod tests {
 
     #[test]
     fn extract_create_mints_rejects_missing_fallback_input_index() {
-        let err = extract_create_mints(&[], "OpenDca")
+        let err = DcaAdapter::extract_create_mints(&[], "OpenDca")
             .err()
             .expect("expected error");
         let Error::Protocol { reason } = err else {
@@ -668,7 +674,7 @@ mod tests {
     #[test]
     fn extract_create_mints_rejects_missing_fallback_output_index() {
         let accounts = vec![account("0", None), account("1", None), account("2", None)];
-        let err = extract_create_mints(&accounts, "OpenDca")
+        let err = DcaAdapter::extract_create_mints(&accounts, "OpenDca")
             .err()
             .expect("expected error");
         let Error::Protocol { reason } = err else {

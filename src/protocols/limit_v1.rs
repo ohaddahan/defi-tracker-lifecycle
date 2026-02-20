@@ -1,9 +1,6 @@
 use crate::error::Error;
 use crate::lifecycle::adapters::{CorrelationOutcome, EventPayload, ProtocolAdapter};
-use crate::protocols::{
-    AccountInfo, EventType, Protocol, checked_u64_to_i64, contains_known_variant,
-    find_account_by_name,
-};
+use crate::protocols::{AccountInfo, EventType, Protocol, ProtocolHelpers};
 use crate::types::{RawEvent, RawInstruction, ResolveContext};
 use strum::VariantNames;
 
@@ -29,6 +26,54 @@ pub enum LimitV1InstructionKind {
 
 #[derive(Debug)]
 pub struct LimitV1Adapter;
+
+#[derive(serde::Deserialize)]
+pub struct OrderKeyHolder {
+    order_key: String,
+}
+
+#[derive(serde::Deserialize)]
+pub struct TradeEventFields {
+    order_key: String,
+    #[serde(default = "LimitV1Adapter::default_unknown")]
+    taker: String,
+    #[serde(alias = "making_amount", default)]
+    in_amount: u64,
+    #[serde(alias = "taking_amount", default)]
+    out_amount: u64,
+    #[serde(alias = "remaining_making_amount", default)]
+    remaining_in_amount: u64,
+    #[expect(dead_code, reason = "consumed by serde for completeness")]
+    #[serde(alias = "remaining_taking_amount", default)]
+    remaining_out_amount: u64,
+}
+
+pub struct LimitTradeEvent {
+    pub order_pda: String,
+    pub taker: String,
+    pub in_amount: i64,
+    pub out_amount: i64,
+    pub remaining_in_amount: i64,
+    pub remaining_out_amount: i64,
+}
+
+pub struct LimitV1CreateArgs {
+    pub making_amount: i64,
+    pub taking_amount: i64,
+    pub expired_at: Option<i64>,
+}
+
+pub struct LimitV1CreateMints {
+    pub input_mint: String,
+    pub output_mint: String,
+}
+
+#[derive(serde::Deserialize)]
+struct InitializeOrderFields {
+    making_amount: u64,
+    taking_amount: u64,
+    expired_at: Option<i64>,
+}
 
 impl ProtocolAdapter for LimitV1Adapter {
     fn protocol(&self) -> Protocol {
@@ -61,7 +106,8 @@ impl ProtocolAdapter for LimitV1Adapter {
         let envelope: LimitV1EventEnvelope = match serde_json::from_value(fields.clone()) {
             Ok(e) => e,
             Err(err) => {
-                if !contains_known_variant(fields, LimitV1EventEnvelope::VARIANTS) {
+                if !ProtocolHelpers::contains_known_variant(fields, LimitV1EventEnvelope::VARIANTS)
+                {
                     return None;
                 }
                 return Some(Err(Error::Protocol {
@@ -70,200 +116,161 @@ impl ProtocolAdapter for LimitV1Adapter {
             }
         };
 
-        Some(resolve_limit_v1_event(envelope))
+        Some(Self::resolve_event(envelope))
     }
 }
 
-fn resolve_limit_v1_event(
-    envelope: LimitV1EventEnvelope,
-) -> Result<(EventType, CorrelationOutcome, EventPayload), Error> {
-    match envelope {
-        LimitV1EventEnvelope::CreateOrderEvent(OrderKeyHolder { order_key }) => Ok((
-            EventType::Created,
-            CorrelationOutcome::Correlated(vec![order_key]),
-            EventPayload::None,
-        )),
-        LimitV1EventEnvelope::CancelOrderEvent(OrderKeyHolder { order_key }) => Ok((
-            EventType::Cancelled,
-            CorrelationOutcome::Correlated(vec![order_key]),
-            EventPayload::None,
-        )),
-        LimitV1EventEnvelope::TradeEvent(TradeEventFields {
-            order_key,
-            taker,
-            in_amount,
-            out_amount,
-            remaining_in_amount,
-            ..
-        }) => Ok((
-            EventType::FillCompleted,
-            CorrelationOutcome::Correlated(vec![order_key]),
-            EventPayload::LimitFill {
-                in_amount: checked_u64_to_i64(in_amount, "in_amount")?,
-                out_amount: checked_u64_to_i64(out_amount, "out_amount")?,
-                remaining_in_amount: checked_u64_to_i64(
-                    remaining_in_amount,
-                    "remaining_in_amount",
-                )?,
-                counterparty: taker,
-            },
-        )),
-    }
-}
-
-pub fn extract_order_pda(
-    accounts: &[AccountInfo],
-    instruction_name: &str,
-) -> Result<String, Error> {
-    if let Some(acc) = find_account_by_name(accounts, "order") {
-        return Ok(acc.pubkey.clone());
+impl LimitV1Adapter {
+    fn default_unknown() -> String {
+        "unknown".to_string()
     }
 
-    let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
-    let kind: LimitV1InstructionKind =
-        serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
-            reason: format!("unknown Limit v1 instruction: {instruction_name}"),
-        })?;
+    fn resolve_event(
+        envelope: LimitV1EventEnvelope,
+    ) -> Result<(EventType, CorrelationOutcome, EventPayload), Error> {
+        match envelope {
+            LimitV1EventEnvelope::CreateOrderEvent(OrderKeyHolder { order_key }) => Ok((
+                EventType::Created,
+                CorrelationOutcome::Correlated(vec![order_key]),
+                EventPayload::None,
+            )),
+            LimitV1EventEnvelope::CancelOrderEvent(OrderKeyHolder { order_key }) => Ok((
+                EventType::Cancelled,
+                CorrelationOutcome::Correlated(vec![order_key]),
+                EventPayload::None,
+            )),
+            LimitV1EventEnvelope::TradeEvent(TradeEventFields {
+                order_key,
+                taker,
+                in_amount,
+                out_amount,
+                remaining_in_amount,
+                ..
+            }) => Ok((
+                EventType::FillCompleted,
+                CorrelationOutcome::Correlated(vec![order_key]),
+                EventPayload::LimitFill {
+                    in_amount: ProtocolHelpers::checked_u64_to_i64(in_amount, "in_amount")?,
+                    out_amount: ProtocolHelpers::checked_u64_to_i64(out_amount, "out_amount")?,
+                    remaining_in_amount: ProtocolHelpers::checked_u64_to_i64(
+                        remaining_in_amount,
+                        "remaining_in_amount",
+                    )?,
+                    counterparty: taker,
+                },
+            )),
+        }
+    }
 
-    let idx = match kind {
-        LimitV1InstructionKind::InitializeOrder(_) => 2,
-        LimitV1InstructionKind::FillOrder(_)
-        | LimitV1InstructionKind::PreFlashFillOrder(_)
-        | LimitV1InstructionKind::FlashFillOrder(_) => 0,
-        LimitV1InstructionKind::CancelOrder(_) | LimitV1InstructionKind::CancelExpiredOrder(_) => 0,
-        LimitV1InstructionKind::WithdrawFee(_)
-        | LimitV1InstructionKind::InitFee(_)
-        | LimitV1InstructionKind::UpdateFee(_) => {
-            return Err(Error::Protocol {
-                reason: format!("Limit v1 instruction {instruction_name} has no order PDA"),
+    pub fn extract_order_pda(
+        accounts: &[AccountInfo],
+        instruction_name: &str,
+    ) -> Result<String, Error> {
+        if let Some(acc) = ProtocolHelpers::find_account_by_name(accounts, "order") {
+            return Ok(acc.pubkey.clone());
+        }
+
+        let wrapper = serde_json::json!({ instruction_name: serde_json::Value::Null });
+        let kind: LimitV1InstructionKind =
+            serde_json::from_value(wrapper).map_err(|_| Error::Protocol {
+                reason: format!("unknown Limit v1 instruction: {instruction_name}"),
+            })?;
+
+        let idx = match kind {
+            LimitV1InstructionKind::InitializeOrder(_) => 2,
+            LimitV1InstructionKind::FillOrder(_)
+            | LimitV1InstructionKind::PreFlashFillOrder(_)
+            | LimitV1InstructionKind::FlashFillOrder(_) => 0,
+            LimitV1InstructionKind::CancelOrder(_)
+            | LimitV1InstructionKind::CancelExpiredOrder(_) => 0,
+            LimitV1InstructionKind::WithdrawFee(_)
+            | LimitV1InstructionKind::InitFee(_)
+            | LimitV1InstructionKind::UpdateFee(_) => {
+                return Err(Error::Protocol {
+                    reason: format!("Limit v1 instruction {instruction_name} has no order PDA"),
+                });
+            }
+        };
+
+        accounts
+            .get(idx)
+            .map(|a| a.pubkey.clone())
+            .ok_or_else(|| Error::Protocol {
+                reason: format!(
+                    "Limit v1 account index {idx} out of bounds for {instruction_name}"
+                ),
+            })
+    }
+
+    pub fn extract_create_mints(accounts: &[AccountInfo]) -> Result<LimitV1CreateMints, Error> {
+        let by_name_input =
+            ProtocolHelpers::find_account_by_name(accounts, "input_mint").map(|a| a.pubkey.clone());
+        let by_name_output = ProtocolHelpers::find_account_by_name(accounts, "output_mint")
+            .map(|a| a.pubkey.clone());
+
+        if let (Some(input_mint), Some(output_mint)) = (by_name_input, by_name_output) {
+            return Ok(LimitV1CreateMints {
+                input_mint,
+                output_mint,
             });
         }
-    };
 
-    accounts
-        .get(idx)
-        .map(|a| a.pubkey.clone())
-        .ok_or_else(|| Error::Protocol {
-            reason: format!("Limit v1 account index {idx} out of bounds for {instruction_name}"),
-        })
-}
+        let input_mint =
+            accounts
+                .get(5)
+                .map(|a| a.pubkey.clone())
+                .ok_or_else(|| Error::Protocol {
+                    reason: "Limit v1 input_mint index 5 out of bounds".into(),
+                })?;
+        let output_mint =
+            accounts
+                .get(8)
+                .map(|a| a.pubkey.clone())
+                .ok_or_else(|| Error::Protocol {
+                    reason: "Limit v1 output_mint index 8 out of bounds".into(),
+                })?;
 
-pub struct LimitV1CreateArgs {
-    pub making_amount: i64,
-    pub taking_amount: i64,
-    pub expired_at: Option<i64>,
-}
-
-pub struct LimitV1CreateMints {
-    pub input_mint: String,
-    pub output_mint: String,
-}
-
-pub fn extract_create_mints(accounts: &[AccountInfo]) -> Result<LimitV1CreateMints, Error> {
-    let by_name_input = find_account_by_name(accounts, "input_mint").map(|a| a.pubkey.clone());
-    let by_name_output = find_account_by_name(accounts, "output_mint").map(|a| a.pubkey.clone());
-
-    if let (Some(input_mint), Some(output_mint)) = (by_name_input, by_name_output) {
-        return Ok(LimitV1CreateMints {
+        Ok(LimitV1CreateMints {
             input_mint,
             output_mint,
-        });
+        })
     }
 
-    let input_mint = accounts
-        .get(5)
-        .map(|a| a.pubkey.clone())
-        .ok_or_else(|| Error::Protocol {
-            reason: "Limit v1 input_mint index 5 out of bounds".into(),
-        })?;
-    let output_mint = accounts
-        .get(8)
-        .map(|a| a.pubkey.clone())
-        .ok_or_else(|| Error::Protocol {
-            reason: "Limit v1 output_mint index 8 out of bounds".into(),
+    pub fn parse_create_args(args: &serde_json::Value) -> Result<LimitV1CreateArgs, Error> {
+        let InitializeOrderFields {
+            making_amount,
+            taking_amount,
+            expired_at,
+        } = serde_json::from_value(args.clone()).map_err(|e| Error::Protocol {
+            reason: format!("failed to parse Limit v1 create args: {e}"),
         })?;
 
-    Ok(LimitV1CreateMints {
-        input_mint,
-        output_mint,
-    })
-}
+        Ok(LimitV1CreateArgs {
+            making_amount: ProtocolHelpers::checked_u64_to_i64(making_amount, "making_amount")?,
+            taking_amount: ProtocolHelpers::checked_u64_to_i64(taking_amount, "taking_amount")?,
+            expired_at,
+        })
+    }
 
-#[derive(serde::Deserialize)]
-pub struct OrderKeyHolder {
-    order_key: String,
-}
-
-#[derive(serde::Deserialize)]
-pub struct TradeEventFields {
-    order_key: String,
-    #[serde(default = "default_unknown")]
-    taker: String,
-    #[serde(alias = "making_amount", default)]
-    in_amount: u64,
-    #[serde(alias = "taking_amount", default)]
-    out_amount: u64,
-    #[serde(alias = "remaining_making_amount", default)]
-    remaining_in_amount: u64,
-    #[expect(dead_code, reason = "consumed by serde for completeness")]
-    #[serde(alias = "remaining_taking_amount", default)]
-    remaining_out_amount: u64,
-}
-
-fn default_unknown() -> String {
-    "unknown".to_string()
-}
-
-pub struct LimitTradeEvent {
-    pub order_pda: String,
-    pub taker: String,
-    pub in_amount: i64,
-    pub out_amount: i64,
-    pub remaining_in_amount: i64,
-    pub remaining_out_amount: i64,
-}
-
-#[derive(serde::Deserialize)]
-struct InitializeOrderFields {
-    making_amount: u64,
-    taking_amount: u64,
-    expired_at: Option<i64>,
-}
-
-pub fn parse_create_args(args: &serde_json::Value) -> Result<LimitV1CreateArgs, Error> {
-    let InitializeOrderFields {
-        making_amount,
-        taking_amount,
-        expired_at,
-    } = serde_json::from_value(args.clone()).map_err(|e| Error::Protocol {
-        reason: format!("failed to parse Limit v1 create args: {e}"),
-    })?;
-
-    Ok(LimitV1CreateArgs {
-        making_amount: checked_u64_to_i64(making_amount, "making_amount")?,
-        taking_amount: checked_u64_to_i64(taking_amount, "taking_amount")?,
-        expired_at,
-    })
-}
-
-#[cfg(test)]
-pub fn classify_decoded(
-    decoded: &carbon_jupiter_limit_order_decoder::instructions::JupiterLimitOrderInstruction,
-) -> Option<EventType> {
-    use carbon_jupiter_limit_order_decoder::instructions::JupiterLimitOrderInstruction;
-    match decoded {
-        JupiterLimitOrderInstruction::InitializeOrder(_) => Some(EventType::Created),
-        JupiterLimitOrderInstruction::PreFlashFillOrder(_) => Some(EventType::FillInitiated),
-        JupiterLimitOrderInstruction::FillOrder(_)
-        | JupiterLimitOrderInstruction::FlashFillOrder(_) => Some(EventType::FillCompleted),
-        JupiterLimitOrderInstruction::CancelOrder(_) => Some(EventType::Cancelled),
-        JupiterLimitOrderInstruction::CancelExpiredOrder(_) => Some(EventType::Expired),
-        JupiterLimitOrderInstruction::CreateOrderEvent(_) => Some(EventType::Created),
-        JupiterLimitOrderInstruction::CancelOrderEvent(_) => Some(EventType::Cancelled),
-        JupiterLimitOrderInstruction::TradeEvent(_) => Some(EventType::FillCompleted),
-        JupiterLimitOrderInstruction::WithdrawFee(_)
-        | JupiterLimitOrderInstruction::InitFee(_)
-        | JupiterLimitOrderInstruction::UpdateFee(_) => None,
+    #[cfg(test)]
+    pub fn classify_decoded(
+        decoded: &carbon_jupiter_limit_order_decoder::instructions::JupiterLimitOrderInstruction,
+    ) -> Option<EventType> {
+        use carbon_jupiter_limit_order_decoder::instructions::JupiterLimitOrderInstruction;
+        match decoded {
+            JupiterLimitOrderInstruction::InitializeOrder(_) => Some(EventType::Created),
+            JupiterLimitOrderInstruction::PreFlashFillOrder(_) => Some(EventType::FillInitiated),
+            JupiterLimitOrderInstruction::FillOrder(_)
+            | JupiterLimitOrderInstruction::FlashFillOrder(_) => Some(EventType::FillCompleted),
+            JupiterLimitOrderInstruction::CancelOrder(_) => Some(EventType::Cancelled),
+            JupiterLimitOrderInstruction::CancelExpiredOrder(_) => Some(EventType::Expired),
+            JupiterLimitOrderInstruction::CreateOrderEvent(_) => Some(EventType::Created),
+            JupiterLimitOrderInstruction::CancelOrderEvent(_) => Some(EventType::Cancelled),
+            JupiterLimitOrderInstruction::TradeEvent(_) => Some(EventType::FillCompleted),
+            JupiterLimitOrderInstruction::WithdrawFee(_)
+            | JupiterLimitOrderInstruction::InitFee(_)
+            | JupiterLimitOrderInstruction::UpdateFee(_) => None,
+        }
     }
 }
 
@@ -447,7 +454,7 @@ mod tests {
             "making_amount": (i64::MAX as u64) + 1,
             "taking_amount": 1_u64
         });
-        assert!(parse_create_args(&args).is_err());
+        assert!(LimitV1Adapter::parse_create_args(&args).is_err());
     }
 
     #[test]
@@ -457,7 +464,7 @@ mod tests {
             "taking_amount": 4_500_u64,
             "expired_at": 1_700_000_000_i64
         });
-        let parsed = parse_create_args(&args).unwrap();
+        let parsed = LimitV1Adapter::parse_create_args(&args).unwrap();
         assert_eq!(parsed.making_amount, 5_000);
         assert_eq!(parsed.taking_amount, 4_500);
         assert_eq!(parsed.expired_at, Some(1_700_000_000));
@@ -469,7 +476,7 @@ mod tests {
             "making_amount": "bad",
             "taking_amount": 1_u64
         });
-        assert!(parse_create_args(&args).is_err());
+        assert!(LimitV1Adapter::parse_create_args(&args).is_err());
     }
 
     #[test]
@@ -479,7 +486,7 @@ mod tests {
             account("idx2", None),
             account("named_order", Some("order")),
         ];
-        let extracted = extract_order_pda(&accounts, "InitializeOrder").unwrap();
+        let extracted = LimitV1Adapter::extract_order_pda(&accounts, "InitializeOrder").unwrap();
         assert_eq!(extracted, "named_order");
     }
 
@@ -491,20 +498,20 @@ mod tests {
             account("init_idx2", None),
         ];
         assert_eq!(
-            extract_order_pda(&init_accounts, "InitializeOrder").unwrap(),
+            LimitV1Adapter::extract_order_pda(&init_accounts, "InitializeOrder").unwrap(),
             "init_idx2"
         );
 
         let fill_accounts = vec![account("fill_idx0", None)];
         assert_eq!(
-            extract_order_pda(&fill_accounts, "FillOrder").unwrap(),
+            LimitV1Adapter::extract_order_pda(&fill_accounts, "FillOrder").unwrap(),
             "fill_idx0"
         );
     }
 
     #[test]
     fn extract_order_pda_rejects_unknown_instruction() {
-        let err = extract_order_pda(&[], "Unknown").unwrap_err();
+        let err = LimitV1Adapter::extract_order_pda(&[], "Unknown").unwrap_err();
         let Error::Protocol { reason } = err else {
             panic!("expected protocol error");
         };
@@ -513,7 +520,7 @@ mod tests {
 
     #[test]
     fn extract_order_pda_rejects_out_of_bounds_index() {
-        let err = extract_order_pda(&[], "InitializeOrder").unwrap_err();
+        let err = LimitV1Adapter::extract_order_pda(&[], "InitializeOrder").unwrap_err();
         let Error::Protocol { reason } = err else {
             panic!("expected protocol error");
         };
@@ -531,7 +538,7 @@ mod tests {
             account("named_input", Some("input_mint")),
             account("named_output", Some("output_mint")),
         ];
-        let extracted = extract_create_mints(&accounts).unwrap();
+        let extracted = LimitV1Adapter::extract_create_mints(&accounts).unwrap();
         assert_eq!(extracted.input_mint, "named_input");
         assert_eq!(extracted.output_mint, "named_output");
     }
@@ -549,14 +556,16 @@ mod tests {
             account("7", None),
             account("fallback_output", None),
         ];
-        let extracted = extract_create_mints(&accounts).unwrap();
+        let extracted = LimitV1Adapter::extract_create_mints(&accounts).unwrap();
         assert_eq!(extracted.input_mint, "fallback_input");
         assert_eq!(extracted.output_mint, "fallback_output");
     }
 
     #[test]
     fn extract_create_mints_rejects_missing_input_fallback_index() {
-        let err = extract_create_mints(&[]).err().expect("expected error");
+        let err = LimitV1Adapter::extract_create_mints(&[])
+            .err()
+            .expect("expected error");
         let Error::Protocol { reason } = err else {
             panic!("expected protocol error");
         };
@@ -573,7 +582,7 @@ mod tests {
             account("4", None),
             account("fallback_input", None),
         ];
-        let err = extract_create_mints(&accounts)
+        let err = LimitV1Adapter::extract_create_mints(&accounts)
             .err()
             .expect("expected error");
         let Error::Protocol { reason } = err else {

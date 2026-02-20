@@ -60,7 +60,7 @@ pub fn dca_closed_terminal_status(closed: &protocols::dca::DcaClosedEvent) -> Te
 }
 
 pub fn kamino_display_terminal_status(status_code: i64) -> Result<Option<TerminalStatus>, Error> {
-    let status = protocols::kamino::parse_display_status(status_code)?;
+    let status = protocols::kamino::KaminoAdapter::parse_display_status(status_code)?;
     match status {
         protocols::kamino::KaminoDisplayStatus::Open => Ok(None),
         protocols::kamino::KaminoDisplayStatus::Filled => Ok(Some(TerminalStatus::Completed)),

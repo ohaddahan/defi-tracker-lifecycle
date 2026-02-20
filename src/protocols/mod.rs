@@ -65,42 +65,46 @@ pub struct AccountInfo {
     pub name: Option<String>,
 }
 
-pub fn parse_accounts(accounts_json: &serde_json::Value) -> Result<Vec<AccountInfo>, Error> {
-    serde_json::from_value(accounts_json.clone()).map_err(|e| Error::Protocol {
-        reason: format!("failed to parse accounts: {e}"),
-    })
-}
+pub struct ProtocolHelpers;
 
-pub fn find_signer(accounts: &[AccountInfo]) -> Option<&str> {
-    accounts
-        .iter()
-        .find(|a| a.is_signer)
-        .map(|a| a.pubkey.as_str())
-}
+impl ProtocolHelpers {
+    pub fn parse_accounts(accounts_json: &serde_json::Value) -> Result<Vec<AccountInfo>, Error> {
+        serde_json::from_value(accounts_json.clone()).map_err(|e| Error::Protocol {
+            reason: format!("failed to parse accounts: {e}"),
+        })
+    }
 
-pub fn find_account_by_name<'a>(
-    accounts: &'a [AccountInfo],
-    name: &str,
-) -> Option<&'a AccountInfo> {
-    accounts.iter().find(|a| a.name.as_deref() == Some(name))
-}
+    pub fn find_signer(accounts: &[AccountInfo]) -> Option<&str> {
+        accounts
+            .iter()
+            .find(|a| a.is_signer)
+            .map(|a| a.pubkey.as_str())
+    }
 
-pub fn contains_known_variant(fields: &serde_json::Value, known_names: &[&str]) -> bool {
-    fields
-        .as_object()
-        .is_some_and(|obj| obj.keys().any(|name| known_names.contains(&name.as_str())))
-}
+    pub fn find_account_by_name<'a>(
+        accounts: &'a [AccountInfo],
+        name: &str,
+    ) -> Option<&'a AccountInfo> {
+        accounts.iter().find(|a| a.name.as_deref() == Some(name))
+    }
 
-pub fn checked_u64_to_i64(value: u64, field: &str) -> Result<i64, Error> {
-    i64::try_from(value).map_err(|_| Error::Protocol {
-        reason: format!("{field} exceeds i64::MAX: {value}"),
-    })
-}
+    pub fn contains_known_variant(fields: &serde_json::Value, known_names: &[&str]) -> bool {
+        fields
+            .as_object()
+            .is_some_and(|obj| obj.keys().any(|name| known_names.contains(&name.as_str())))
+    }
 
-pub fn checked_u16_to_i16(value: u16, field: &str) -> Result<i16, Error> {
-    i16::try_from(value).map_err(|_| Error::Protocol {
-        reason: format!("{field} exceeds i16::MAX: {value}"),
-    })
+    pub fn checked_u64_to_i64(value: u64, field: &str) -> Result<i64, Error> {
+        i64::try_from(value).map_err(|_| Error::Protocol {
+            reason: format!("{field} exceeds i64::MAX: {value}"),
+        })
+    }
+
+    pub fn checked_u16_to_i16(value: u16, field: &str) -> Result<i16, Error> {
+        i16::try_from(value).map_err(|_| Error::Protocol {
+            reason: format!("{field} exceeds i16::MAX: {value}"),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -188,7 +192,7 @@ mod tests {
             }
         ]);
 
-        let parsed = parse_accounts(&accounts_json).unwrap();
+        let parsed = ProtocolHelpers::parse_accounts(&accounts_json).unwrap();
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].pubkey, "signer_pubkey");
         assert!(parsed[0].is_signer);
@@ -200,17 +204,18 @@ mod tests {
         assert!(!parsed[1].is_writable);
         assert!(parsed[1].name.is_none());
 
-        assert_eq!(find_signer(&parsed), Some("signer_pubkey"));
+        assert_eq!(ProtocolHelpers::find_signer(&parsed), Some("signer_pubkey"));
         assert_eq!(
-            find_account_by_name(&parsed, "order").map(|a| a.pubkey.as_str()),
+            ProtocolHelpers::find_account_by_name(&parsed, "order").map(|a| a.pubkey.as_str()),
             Some("signer_pubkey")
         );
-        assert!(find_account_by_name(&parsed, "missing").is_none());
+        assert!(ProtocolHelpers::find_account_by_name(&parsed, "missing").is_none());
     }
 
     #[test]
     fn parse_accounts_rejects_non_array() {
-        let err = parse_accounts(&serde_json::json!({"pubkey": "not-an-array"})).unwrap_err();
+        let err = ProtocolHelpers::parse_accounts(&serde_json::json!({"pubkey": "not-an-array"}))
+            .unwrap_err();
         let Error::Protocol { reason } = err else {
             panic!("expected protocol error");
         };
@@ -219,7 +224,8 @@ mod tests {
 
     #[test]
     fn parse_accounts_rejects_missing_pubkey() {
-        let err = parse_accounts(&serde_json::json!([{"is_signer": true}])).unwrap_err();
+        let err =
+            ProtocolHelpers::parse_accounts(&serde_json::json!([{"is_signer": true}])).unwrap_err();
         let Error::Protocol { reason } = err else {
             panic!("expected protocol error");
         };
@@ -235,7 +241,7 @@ mod tests {
             name: Some("order".to_string()),
         }];
 
-        assert_eq!(find_signer(&accounts), None);
+        assert_eq!(ProtocolHelpers::find_signer(&accounts), None);
     }
 
     fn make_ix(name: &str) -> RawInstruction {
