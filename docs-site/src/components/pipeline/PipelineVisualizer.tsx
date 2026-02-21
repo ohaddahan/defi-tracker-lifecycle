@@ -7,7 +7,7 @@ const STAGES = [
     subtitle: 'RawInstruction / RawEvent',
     detail:
       'Transaction data arrives as JSON with program_id, instruction_name, accounts, args (instructions) or event_name and fields (events).',
-    color: '#6b7280',
+    color: '#5c6078',
   },
   {
     title: 'from_program_id()',
@@ -21,21 +21,21 @@ const STAGES = [
     subtitle: 'Protocol → ProtocolAdapter',
     detail:
       'Each Protocol variant maps to a zero-sized static adapter (DcaAdapter, LimitV1Adapter, etc.) implementing the ProtocolAdapter trait.',
-    color: '#a855f7',
+    color: '#9945ff',
   },
   {
     title: 'classify / resolve',
     subtitle: 'EventType + Correlation + Payload',
     detail:
       'Instructions: serde envelope dispatch → EventType. Events: serde envelope → field extraction → (EventType, CorrelationOutcome, EventPayload).',
-    color: '#06b6d4',
+    color: '#06d6a0',
   },
   {
     title: 'decide_transition()',
     subtitle: 'TransitionDecision',
     detail:
       'Consumer maps EventType → LifecycleTransition, then LifecycleEngine decides: Apply (non-terminal or MetadataOnly) or IgnoreTerminalViolation.',
-    color: '#22c55e',
+    color: '#14f195',
   },
 ];
 
@@ -43,8 +43,8 @@ export default function PipelineVisualizer() {
   const [active, setActive] = useState(0);
 
   return (
-    <div className="rounded-xl border border-border bg-panel p-6">
-      <div className="flex flex-col sm:flex-row gap-3 items-stretch">
+    <div className="rounded-xl border border-border bg-panel p-6 glow-border">
+      <div className="flex flex-col sm:flex-row gap-2 items-stretch">
         {STAGES.map((stage, i) => (
           <div key={i} className="flex items-center flex-1">
             <PipelineStep
@@ -57,9 +57,9 @@ export default function PipelineVisualizer() {
               index={i}
             />
             {i < STAGES.length - 1 && (
-              <div className="hidden sm:flex items-center px-1">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M5 10h10M12 7l3 3-3 3" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <div className="hidden sm:flex items-center px-0.5">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 8h8M10 5l2.5 3-2.5 3" stroke="#2a2d40" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
             )}

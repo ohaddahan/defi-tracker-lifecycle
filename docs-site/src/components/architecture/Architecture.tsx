@@ -29,47 +29,44 @@ const EVENT_TYPE_MAPPING = [
 export default function Architecture() {
   return (
     <div className="space-y-8">
-      {/* Crate Structure */}
-      <div className="rounded-xl border border-border bg-panel p-6">
-        <h3 className="text-sm font-semibold text-dim uppercase tracking-wider mb-4">
+      <div className="rounded-xl border border-border bg-panel p-6 glow-border">
+        <h3 className="text-[10px] text-dim uppercase tracking-widest font-mono font-semibold mb-4">
           Crate Structure
         </h3>
-        <pre className="rounded-lg bg-bg border border-border p-4 font-mono text-xs text-dim overflow-x-auto">
+        <pre className="rounded-lg bg-bg-elevated border border-border p-4 font-mono text-xs text-dim/80 overflow-x-auto leading-relaxed">
           {CRATE_TREE}
         </pre>
       </div>
 
-      {/* Test Pyramid */}
-      <div className="rounded-xl border border-border bg-panel p-6">
-        <h3 className="text-sm font-semibold text-dim uppercase tracking-wider mb-6">
+      <div className="rounded-xl border border-border bg-panel p-6 glow-border">
+        <h3 className="text-[10px] text-dim uppercase tracking-widest font-mono font-semibold mb-6">
           6-Layer Test Pyramid (137 tests)
         </h3>
         <TestPyramid />
       </div>
 
-      {/* EventType → Transition Table */}
-      <div className="rounded-xl border border-border bg-panel p-6">
-        <h3 className="text-sm font-semibold text-dim uppercase tracking-wider mb-4">
+      <div className="rounded-xl border border-border bg-panel p-6 glow-border">
+        <h3 className="text-[10px] text-dim uppercase tracking-widest font-mono font-semibold mb-2">
           EventType → LifecycleTransition Mapping
         </h3>
-        <p className="text-xs text-dim mb-4">
-          This mapping is defined by the consumer (defi-tracker), not by this crate. Shown here for reference.
+        <p className="text-[11px] text-dim/60 mb-4">
+          Defined by consumer (defi-tracker), not by this crate. Shown for reference.
         </p>
         <div className="rounded-lg border border-border overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-bg">
-                <th className="px-3 py-2 text-left text-xs text-dim font-medium">EventType</th>
-                <th className="px-3 py-2 text-left text-xs text-dim font-medium">Transition</th>
-                <th className="px-3 py-2 text-left text-xs text-dim font-medium">Description</th>
+              <tr className="bg-bg-elevated">
+                <th className="px-3 py-2 text-left text-[10px] text-dim font-mono font-medium uppercase tracking-wider">EventType</th>
+                <th className="px-3 py-2 text-left text-[10px] text-dim font-mono font-medium uppercase tracking-wider">Transition</th>
+                <th className="px-3 py-2 text-left text-[10px] text-dim font-mono font-medium uppercase tracking-wider">Description</th>
               </tr>
             </thead>
             <tbody>
               {EVENT_TYPE_MAPPING.map(([et, tr, desc]) => (
-                <tr key={et} className="border-t border-border/50">
+                <tr key={et} className="border-t border-border/30 hover:bg-panel-hover/50 transition-colors">
                   <td className="px-3 py-1.5 font-mono text-xs text-accent">{et}</td>
                   <td className="px-3 py-1.5 font-mono text-xs text-cyan">{tr}</td>
-                  <td className="px-3 py-1.5 text-xs text-dim">{desc}</td>
+                  <td className="px-3 py-1.5 text-xs text-dim/70">{desc}</td>
                 </tr>
               ))}
             </tbody>

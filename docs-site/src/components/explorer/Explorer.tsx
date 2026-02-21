@@ -63,58 +63,63 @@ export default function Explorer() {
   );
 
   return (
-    <div className="rounded-xl border border-border bg-panel overflow-hidden">
+    <div className="rounded-xl border border-border bg-panel overflow-hidden glow-border">
       <div className="flex flex-col lg:flex-row">
         {/* Sidebar */}
-        <div className="w-full lg:w-80 lg:min-w-[320px] lg:border-r border-border flex flex-col">
-          <div className="p-4 border-b border-border">
-            <div className="text-[11px] text-dim uppercase tracking-wider font-semibold mb-2">
-              Presets
-            </div>
+        <div className="w-full lg:w-80 lg:min-w-[320px] lg:border-r border-border flex flex-col bg-panel">
+          <SidebarSection label="Presets">
             <PresetBar onRun={handlePreset} running={runningPreset} />
-          </div>
-          <div className="p-4 border-b border-border">
-            <div className="text-[11px] text-dim uppercase tracking-wider font-semibold mb-2">
-              Protocol
-            </div>
+          </SidebarSection>
+          <SidebarSection label="Protocol">
             <ProtocolSelector selected={state.protocol} onSelect={handleProtocolChange} />
-          </div>
-          <div className="p-4 border-b border-border">
-            <div className="text-[11px] text-dim uppercase tracking-wider font-semibold mb-2">
-              Fire Event
-            </div>
+          </SidebarSection>
+          <SidebarSection label="Fire Event">
             <EventButtons
               protocol={state.protocol}
               isTerminal={state.isTerminal}
               onFire={fireWithAnimation}
             />
-          </div>
-          <div className="p-4 border-b border-border">
-            <div className="text-[11px] text-dim uppercase tracking-wider font-semibold mb-2">
-              Snapshot Delta Calculator
-            </div>
+          </SidebarSection>
+          <SidebarSection label="Snapshot Delta Calculator">
             <SnapshotDelta />
-          </div>
-          <div className="p-4 border-b border-border flex-none">
-            <div className="text-[11px] text-dim uppercase tracking-wider font-semibold mb-2">
-              Event Log
-            </div>
-          </div>
+          </SidebarSection>
+          <SidebarSection label="Event Log" noBorder>
+            <div />
+          </SidebarSection>
           <EventLog log={state.log} />
         </div>
 
         {/* Main area */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col bg-bg-elevated/50">
           <CurrentStateBar
             currentStatus={state.currentStatus}
             fills={state.fills}
             onReset={state.reset}
           />
-          <div className="flex-1 p-4 min-h-[400px]">
+          <div className="flex-1 p-6 min-h-[400px]">
             <StateDiagram currentStatus={state.currentStatus} lastTransition={lastTransition} />
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SidebarSection({
+  label,
+  children,
+  noBorder = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  noBorder?: boolean;
+}) {
+  return (
+    <div className={`p-4 ${noBorder ? '' : 'border-b border-border'}`}>
+      <div className="text-[10px] text-dim uppercase tracking-widest font-semibold mb-2.5 font-mono">
+        {label}
+      </div>
+      {children}
     </div>
   );
 }
