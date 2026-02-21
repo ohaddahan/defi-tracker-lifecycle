@@ -4,9 +4,17 @@ pub mod limit_v1;
 pub mod limit_v2;
 
 use serde::{Deserialize, Serialize};
-use solana_pubkey::Pubkey;
 
 use crate::error::Error;
+
+#[cfg(feature = "wasm")]
+pub const DCA_PROGRAM_ID: &str = "DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M";
+#[cfg(feature = "wasm")]
+pub const LIMIT_V1_PROGRAM_ID: &str = "jupoNjAxXgZ4rjzxzPMP4oxduvQsQtZzyknqvzYNrNu";
+#[cfg(feature = "wasm")]
+pub const LIMIT_V2_PROGRAM_ID: &str = "j1o2qRpjcyUwEvwtcfhEQefh773ZgjxcVRry7LDqg5X";
+#[cfg(feature = "wasm")]
+pub const KAMINO_PROGRAM_ID: &str = "LiMoM9rMhrdYrfzUCxQppvxCSG1FcrUK9G8uLq4A1GF";
 
 /// Supported DeFi protocols.
 #[derive(
@@ -26,8 +34,9 @@ pub enum Protocol {
 
 impl Protocol {
     /// Resolves a base58 program id string to its [`Protocol`], or `None` if unrecognised.
+    #[cfg(feature = "native")]
     pub fn from_program_id(program_id: &str) -> Option<Self> {
-        let key: Pubkey = program_id.parse().ok()?;
+        let key: solana_pubkey::Pubkey = program_id.parse().ok()?;
         match key {
             carbon_jupiter_dca_decoder::PROGRAM_ID => Some(Self::Dca),
             carbon_jupiter_limit_order_decoder::PROGRAM_ID => Some(Self::LimitV1),
@@ -37,14 +46,36 @@ impl Protocol {
         }
     }
 
+    #[cfg(all(feature = "wasm", not(feature = "native")))]
+    pub fn from_program_id(program_id: &str) -> Option<Self> {
+        match program_id {
+            DCA_PROGRAM_ID => Some(Self::Dca),
+            LIMIT_V1_PROGRAM_ID => Some(Self::LimitV1),
+            LIMIT_V2_PROGRAM_ID => Some(Self::LimitV2),
+            KAMINO_PROGRAM_ID => Some(Self::Kamino),
+            _ => None,
+        }
+    }
+
     /// Returns the on-chain program id for every supported protocol.
-    pub fn all_program_ids() -> [Pubkey; 4] {
+    #[cfg(feature = "native")]
+    pub fn all_program_ids() -> [solana_pubkey::Pubkey; 4] {
         [
             carbon_jupiter_dca_decoder::PROGRAM_ID,
             carbon_jupiter_limit_order_decoder::PROGRAM_ID,
             carbon_jupiter_limit_order_2_decoder::PROGRAM_ID,
             carbon_kamino_limit_order_decoder::PROGRAM_ID,
         ]
+    }
+
+    #[cfg(feature = "wasm")]
+    pub fn program_id_str(&self) -> &'static str {
+        match self {
+            Self::Dca => DCA_PROGRAM_ID,
+            Self::LimitV1 => LIMIT_V1_PROGRAM_ID,
+            Self::LimitV2 => LIMIT_V2_PROGRAM_ID,
+            Self::Kamino => KAMINO_PROGRAM_ID,
+        }
     }
 }
 
@@ -144,6 +175,7 @@ mod tests {
     use crate::types::{RawEvent, RawInstruction, ResolveContext};
     use std::collections::HashSet;
 
+    #[cfg(feature = "native")]
     #[test]
     fn protocol_program_id_mapping_and_string_names_are_stable() {
         let cases = [
@@ -187,6 +219,43 @@ mod tests {
                 carbon_kamino_limit_order_decoder::PROGRAM_ID,
             ]
         );
+    }
+
+    #[cfg(all(feature = "native", feature = "wasm"))]
+    #[test]
+    fn hardcoded_program_ids_match_carbon_constants() {
+        assert_eq!(
+            carbon_jupiter_dca_decoder::PROGRAM_ID.to_string(),
+            DCA_PROGRAM_ID
+        );
+        assert_eq!(
+            carbon_jupiter_limit_order_decoder::PROGRAM_ID.to_string(),
+            LIMIT_V1_PROGRAM_ID
+        );
+        assert_eq!(
+            carbon_jupiter_limit_order_2_decoder::PROGRAM_ID.to_string(),
+            LIMIT_V2_PROGRAM_ID
+        );
+        assert_eq!(
+            carbon_kamino_limit_order_decoder::PROGRAM_ID.to_string(),
+            KAMINO_PROGRAM_ID
+        );
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn protocol_program_id_str_roundtrips() {
+        for protocol in [
+            Protocol::Dca,
+            Protocol::LimitV1,
+            Protocol::LimitV2,
+            Protocol::Kamino,
+        ] {
+            assert_eq!(
+                Protocol::from_program_id(protocol.program_id_str()),
+                Some(protocol)
+            );
+        }
     }
 
     #[test]

@@ -1,4 +1,5 @@
 pub mod adapters;
+pub mod mapping;
 
 /// Terminal state of a DeFi order lifecycle.
 #[derive(

@@ -38,6 +38,31 @@ pub enum DcaInstructionKind {
     WithdrawFees(serde_json::Value),
 }
 
+#[cfg(feature = "wasm")]
+pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
+    ("OpenDca", EventType::Created),
+    ("OpenDcaV2", EventType::Created),
+    ("InitiateFlashFill", EventType::FillInitiated),
+    ("InitiateDlmmFill", EventType::FillInitiated),
+    ("FulfillFlashFill", EventType::FillCompleted),
+    ("FulfillDlmmFill", EventType::FillCompleted),
+    ("CloseDca", EventType::Closed),
+    ("EndAndClose", EventType::Closed),
+];
+
+#[cfg(feature = "wasm")]
+pub const EVENT_EVENT_TYPES: &[(&str, EventType)] = &[
+    ("OpenedEvent", EventType::Created),
+    ("FilledEvent", EventType::FillCompleted),
+    ("ClosedEvent", EventType::Closed),
+    ("CollectedFeeEvent", EventType::FeeCollected),
+    ("WithdrawEvent", EventType::Withdrawn),
+    ("DepositEvent", EventType::Deposited),
+];
+
+#[cfg(feature = "wasm")]
+pub const CLOSED_VARIANTS: &[&str] = &["Completed", "Cancelled", "Expired"];
+
 /// Jupiter DCA protocol adapter (zero-sized, stored as a static).
 #[derive(Debug)]
 pub struct DcaAdapter;
@@ -340,7 +365,7 @@ impl DcaAdapter {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "native"))]
     pub fn classify_decoded(
         decoded: &carbon_jupiter_dca_decoder::instructions::JupiterDcaInstruction,
     ) -> Option<EventType> {
@@ -720,6 +745,51 @@ mod tests {
             CorrelationOutcome::Correlated(vec!["deposit_pda_123".to_string()])
         );
         assert_eq!(payload, EventPayload::None);
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn instruction_constants_match_classify() {
+        for (name, expected) in INSTRUCTION_EVENT_TYPES {
+            let ix = RawInstruction {
+                id: 1,
+                signature: "sig".to_string(),
+                instruction_index: 0,
+                program_id: "p".to_string(),
+                inner_program_id: "p".to_string(),
+                instruction_name: name.to_string(),
+                accounts: None,
+                args: None,
+                slot: 1,
+            };
+            assert_eq!(
+                DcaAdapter.classify_instruction(&ix).as_ref(),
+                Some(expected),
+                "INSTRUCTION_EVENT_TYPES mismatch for {name}"
+            );
+        }
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn event_constants_match_resolve() {
+        for (name, expected) in EVENT_EVENT_TYPES {
+            let fields = match *name {
+                "FilledEvent" => {
+                    serde_json::json!({(*name): {"dca_key": "t", "in_amount": 1_u64, "out_amount": 1_u64}})
+                }
+                "ClosedEvent" => {
+                    serde_json::json!({(*name): {"dca_key": "t", "user_closed": false, "unfilled_amount": 0_u64}})
+                }
+                _ => serde_json::json!({(*name): {"dca_key": "t"}}),
+            };
+            let result = resolve(fields);
+            let (event_type, _, _) = result.expect("should return Some").expect("should be Ok");
+            assert_eq!(
+                &event_type, expected,
+                "EVENT_EVENT_TYPES mismatch for {name}"
+            );
+        }
     }
 
     #[test]

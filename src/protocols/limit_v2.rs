@@ -23,6 +23,24 @@ pub enum LimitV2InstructionKind {
     WithdrawFee(serde_json::Value),
 }
 
+#[cfg(feature = "wasm")]
+pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
+    ("InitializeOrder", EventType::Created),
+    ("PreFlashFillOrder", EventType::FillInitiated),
+    ("FlashFillOrder", EventType::FillCompleted),
+    ("CancelOrder", EventType::Cancelled),
+];
+
+#[cfg(feature = "wasm")]
+pub const EVENT_EVENT_TYPES: &[(&str, EventType)] = &[
+    ("CreateOrderEvent", EventType::Created),
+    ("CancelOrderEvent", EventType::Cancelled),
+    ("TradeEvent", EventType::FillCompleted),
+];
+
+#[cfg(feature = "wasm")]
+pub const CLOSED_VARIANTS: &[&str] = &[];
+
 /// Jupiter Limit Order v2 protocol adapter (zero-sized, stored as a static).
 #[derive(Debug)]
 pub struct LimitV2Adapter;
@@ -285,7 +303,7 @@ impl LimitV2Adapter {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "native"))]
     pub fn classify_decoded(
         decoded: &carbon_jupiter_limit_order_2_decoder::instructions::JupiterLimitOrder2Instruction,
     ) -> Option<EventType> {
@@ -633,6 +651,48 @@ mod tests {
             panic!("expected protocol error");
         };
         assert_eq!(reason, "Limit v2 output_mint index 8 out of bounds");
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn instruction_constants_match_classify() {
+        for (name, expected) in INSTRUCTION_EVENT_TYPES {
+            let ix = RawInstruction {
+                id: 1,
+                signature: "sig".to_string(),
+                instruction_index: 0,
+                program_id: "p".to_string(),
+                inner_program_id: "p".to_string(),
+                instruction_name: name.to_string(),
+                accounts: None,
+                args: None,
+                slot: 1,
+            };
+            assert_eq!(
+                LimitV2Adapter.classify_instruction(&ix).as_ref(),
+                Some(expected),
+                "INSTRUCTION_EVENT_TYPES mismatch for {name}"
+            );
+        }
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn event_constants_match_resolve() {
+        for (name, expected) in EVENT_EVENT_TYPES {
+            let fields = match *name {
+                "TradeEvent" => {
+                    serde_json::json!({(*name): {"order_key": "t", "making_amount": 1_u64, "taking_amount": 1_u64, "remaining_making_amount": 0_u64, "remaining_taking_amount": 0_u64}})
+                }
+                _ => serde_json::json!({(*name): {"order_key": "t"}}),
+            };
+            let result = resolve(fields);
+            let (event_type, _, _) = result.expect("should return Some").expect("should be Ok");
+            assert_eq!(
+                &event_type, expected,
+                "EVENT_EVENT_TYPES mismatch for {name}"
+            );
+        }
     }
 
     #[test]

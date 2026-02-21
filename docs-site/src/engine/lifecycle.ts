@@ -1,4 +1,10 @@
-// Synced from src/lifecycle/mod.rs
+// Powered by WASM — logic from src/lifecycle/mod.rs
+
+import {
+  wasmDecideTransition,
+  wasmIsTerminal,
+  wasmNormalizeSnapshot,
+} from './wasm';
 
 export type TerminalStatus = 'completed' | 'cancelled' | 'expired';
 
@@ -15,32 +21,26 @@ export interface SnapshotDelta {
   regression: boolean;
 }
 
-const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
-  'completed',
-  'cancelled',
-  'expired',
-]);
-
 export function isTerminal(status: string | null): boolean {
-  return status !== null && TERMINAL_STATUSES.has(status);
+  return wasmIsTerminal(status);
 }
 
 export function decideTransition(
   currentStatus: string | null,
   transition: LifecycleTransition,
 ): TransitionDecision {
-  if (!isTerminal(currentStatus)) return 'Apply';
-  if (transition.type === 'MetadataOnly') return 'Apply';
-  return 'IgnoreTerminalViolation';
+  const closeStatus =
+    transition.type === 'Close' ? transition.status : undefined;
+  return wasmDecideTransition(
+    currentStatus,
+    transition.type,
+    closeStatus,
+  ) as TransitionDecision;
 }
 
 export function normalizeSnapshotToDelta(
   storedTotal: number,
   snapshotTotal: number,
 ): SnapshotDelta {
-  const raw = snapshotTotal - storedTotal;
-  return {
-    delta: Math.max(0, raw),
-    regression: snapshotTotal < storedTotal,
-  };
+  return wasmNormalizeSnapshot(storedTotal, snapshotTotal) as SnapshotDelta;
 }

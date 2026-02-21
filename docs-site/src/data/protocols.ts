@@ -1,4 +1,6 @@
-// Synced from src/protocols/dca.rs, limit_v1.rs, limit_v2.rs, kamino.rs
+// Mapping data powered by WASM — UI metadata stays in TS
+
+import { wasmGetAllProtocols } from '../engine/wasm';
 
 export type EventType =
   | 'Created'
@@ -24,79 +26,42 @@ export interface ProtocolConfig {
   notes: string[];
 }
 
-export const PROTOCOLS: Record<ProtocolId, ProtocolConfig> = {
+interface WasmProtocolData {
+  id: string;
+  programId: string;
+  instructions: Record<string, string>;
+  events: Record<string, string>;
+  closedVariants: string[];
+}
+
+const UI_METADATA: Record<
+  string,
+  { id: ProtocolId; label: string; sub: string; notes: string[] }
+> = {
   dca: {
     id: 'dca',
     label: 'Jupiter DCA',
     sub: 'Dollar-Cost Averaging',
-    programId: 'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M',
-    instructions: {
-      OpenDca: 'Created',
-      OpenDcaV2: 'Created',
-      InitiateFlashFill: 'FillInitiated',
-      InitiateDlmmFill: 'FillInitiated',
-      FulfillFlashFill: 'FillCompleted',
-      FulfillDlmmFill: 'FillCompleted',
-      CloseDca: 'Closed',
-      EndAndClose: 'Closed',
-    },
-    events: {
-      OpenedEvent: 'Created',
-      FilledEvent: 'FillCompleted',
-      ClosedEvent: 'Closed',
-      CollectedFeeEvent: 'FeeCollected',
-      WithdrawEvent: 'Withdrawn',
-      DepositEvent: 'Deposited',
-    },
-    closedVariants: ['Completed', 'Cancelled', 'Expired'],
     notes: [
       'ClosedEvent terminal status derived from user_closed + unfilled_amount fields',
       'Priority: user_closed → Cancelled, unfilled_amount == 0 → Completed, else → Expired',
       'Transfer/Deposit/Withdraw/WithdrawFees instructions are classified as None (irrelevant)',
     ],
   },
-  limitV1: {
+  limit_v1: {
     id: 'limitV1',
     label: 'Jupiter Limit V1',
     sub: 'Limit Orders V1',
-    programId: 'jupoNjAxXgZ4rjzxzPMP4oxduvQsQtZzyknqvzYNrNu',
-    instructions: {
-      InitializeOrder: 'Created',
-      PreFlashFillOrder: 'FillInitiated',
-      FillOrder: 'FillCompleted',
-      FlashFillOrder: 'FillCompleted',
-      CancelOrder: 'Cancelled',
-      CancelExpiredOrder: 'Expired',
-    },
-    events: {
-      CreateOrderEvent: 'Created',
-      CancelOrderEvent: 'Cancelled',
-      TradeEvent: 'FillCompleted',
-    },
-    closedVariants: [],
     notes: [
       'CancelExpiredOrder instruction maps to Expired EventType (V2 has no expiry instruction)',
       'TradeEvent uses in_amount/out_amount field names (V1 naming)',
       'WithdrawFee/InitFee/UpdateFee instructions are classified as None',
     ],
   },
-  limitV2: {
+  limit_v2: {
     id: 'limitV2',
     label: 'Jupiter Limit V2',
     sub: 'Limit Orders V2',
-    programId: 'j1o2qRpjcyUwEvwtcfhEQefh773ZgjxcVRry7LDqg5X',
-    instructions: {
-      InitializeOrder: 'Created',
-      PreFlashFillOrder: 'FillInitiated',
-      FlashFillOrder: 'FillCompleted',
-      CancelOrder: 'Cancelled',
-    },
-    events: {
-      CreateOrderEvent: 'Created',
-      CancelOrderEvent: 'Cancelled',
-      TradeEvent: 'FillCompleted',
-    },
-    closedVariants: [],
     notes: [
       'No CancelExpiredOrder — V2 has no expiry instruction',
       'TradeEvent uses making_amount/taking_amount field names (V2 naming)',
@@ -108,19 +73,6 @@ export const PROTOCOLS: Record<ProtocolId, ProtocolConfig> = {
     id: 'kamino',
     label: 'Kamino',
     sub: 'Kamino Limit Orders',
-    programId: 'LiMoM9rMhrdYrfzUCxQppvxCSG1FcrUK9G8uLq4A1GF',
-    instructions: {
-      CreateOrder: 'Created',
-      TakeOrder: 'FillCompleted',
-      FlashTakeOrderStart: 'FillInitiated',
-      FlashTakeOrderEnd: 'FillCompleted',
-      CloseOrderAndClaimTip: 'Closed',
-    },
-    events: {
-      OrderDisplayEvent: 'FillCompleted',
-      UserSwapBalancesEvent: 'FillCompleted',
-    },
-    closedVariants: ['Completed', 'Cancelled', 'Expired'],
     notes: [
       'OrderDisplayEvent has no order PDA — requires pre_fetched_order_pdas from instruction accounts',
       'Returns Uncorrelated if PDAs missing',
@@ -130,5 +82,30 @@ export const PROTOCOLS: Record<ProtocolId, ProtocolConfig> = {
     ],
   },
 };
+
+function buildProtocols(): Record<ProtocolId, ProtocolConfig> {
+  const wasmData = wasmGetAllProtocols() as WasmProtocolData[];
+  const result = {} as Record<ProtocolId, ProtocolConfig>;
+
+  for (const wp of wasmData) {
+    const meta = UI_METADATA[wp.id];
+    if (!meta) continue;
+
+    result[meta.id] = {
+      id: meta.id,
+      label: meta.label,
+      sub: meta.sub,
+      programId: wp.programId,
+      instructions: wp.instructions as Record<string, EventType>,
+      events: wp.events as Record<string, EventType>,
+      closedVariants: wp.closedVariants,
+      notes: meta.notes,
+    };
+  }
+
+  return result;
+}
+
+export const PROTOCOLS: Record<ProtocolId, ProtocolConfig> = buildProtocols();
 
 export const PROTOCOL_LIST: ProtocolConfig[] = Object.values(PROTOCOLS);

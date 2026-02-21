@@ -9,18 +9,26 @@ src/
   lib.rs                    # Public API re-exports, cfg_attr deny for production
   error.rs                  # Error enum (Parse, Protocol, Json)
   types.rs                  # RawInstruction, RawEvent, ResolveContext, AccountInfo helpers
+  wasm.rs                   # WASM-bindgen API surface (cfg(feature = "wasm"))
   lifecycle/
     mod.rs                  # LifecycleEngine state machine, TerminalStatus, SnapshotDelta
     adapters.rs             # ProtocolAdapter trait, adapter_for(), CorrelationOutcome, EventPayload
+    mapping.rs              # Canonical EventType→LifecycleTransition mapping + display helpers
   protocols/
-    mod.rs                  # Protocol/EventType enums, program IDs, shared account + checked-cast + known-variant helpers
-    dca.rs                  # Jupiter DCA adapter (mirror enums: DcaEventEnvelope, DcaInstructionKind)
-    limit_v1.rs             # Jupiter Limit V1 adapter (mirror enums: LimitV1EventEnvelope, LimitV1InstructionKind)
-    limit_v2.rs             # Jupiter Limit V2 adapter (mirror enums: LimitV2EventEnvelope, LimitV2InstructionKind)
-    kamino.rs               # Kamino adapter (mirror enums: KaminoEventEnvelope, KaminoInstructionKind)
+    mod.rs                  # Protocol/EventType enums, program IDs, shared helpers, hardcoded program ID constants
+    dca.rs                  # Jupiter DCA adapter + INSTRUCTION/EVENT_EVENT_TYPES + CLOSED_VARIANTS constants
+    limit_v1.rs             # Jupiter Limit V1 adapter + variant→EventType constants
+    limit_v2.rs             # Jupiter Limit V2 adapter + variant→EventType constants
+    kamino.rs               # Kamino adapter + variant→EventType constants
 tests/
   adapter_fixtures.rs       # Integration tests using real JSON fixtures + end-to-end lifecycle tests
   fixtures/                 # dca_*.json, kamino_*.json, limit_v1_*.json, limit_v2_*.json
+docs-site/
+  src/engine/wasm.ts        # Typed wrappers for WASM imports
+  src/engine/lifecycle.ts   # TS types + WASM-backed functions
+  src/engine/classifier.ts  # JSON classifier via WASM
+  src/engine/eventMapping.ts # EventType→Transition via WASM
+  src/data/protocols.ts     # UI metadata merged with WASM protocol data
 ```
 
 ## Key Architecture
@@ -35,9 +43,15 @@ tests/
 
 **Typed deserialization**: Inner types use `String` for pubkeys since `solana_pubkey::Pubkey` v3 serde expects byte arrays, not base58 strings in JSON.
 
-**Program IDs from Carbon**: `Protocol::from_program_id(&str)` parses the input to `solana_pubkey::Pubkey` and compares directly against each Carbon decoder crate's `PROGRAM_ID` constant. No duplicated string constants — correctness by construction.
+**Program IDs**: Hardcoded base58 constants (`DCA_PROGRAM_ID`, etc.) in `protocols/mod.rs`. With `native` feature, `from_program_id()` parses to `Pubkey` and compares against Carbon's `PROGRAM_ID` constants. With `wasm` feature, uses string comparison. Native-only test verifies hardcoded strings match Carbon constants.
 
-**Compile-time guardrails**: Each protocol has a `#[cfg(test)]` `classify_decoded()` function with exhaustive match on the Carbon instruction enum. When upstream adds new variants, tests break at compile time.
+**WASM API**: Feature-gated (`wasm`) `src/wasm.rs` exposes `get_all_protocols`, `classify_json`, `decide_transition`, `normalize_snapshot`, `event_type_to_transition`, `is_terminal`, `transition_to_string`, `transition_target` via `wasm-bindgen`. Uses `serde-wasm-bindgen` for JsValue conversion.
+
+**Canonical EventType→Transition mapping**: `src/lifecycle/mapping.rs` provides `event_type_to_transition()`, `transition_to_display()`, `transition_target()`. Previously consumer-defined; now canonical in the crate.
+
+**Variant→EventType constants**: Each protocol module exports `INSTRUCTION_EVENT_TYPES`, `EVENT_EVENT_TYPES`, `CLOSED_VARIANTS` static arrays mapping variant names to `EventType` values. Tests verify these match actual classify/resolve outputs.
+
+**Compile-time guardrails**: Each protocol has a `#[cfg(all(test, feature = "native"))]` `classify_decoded()` function with exhaustive match on the Carbon instruction enum. When upstream adds new variants, tests break at compile time.
 
 **Runtime guardrails (mirror enum alignment tests)**: Each protocol has a `mirror_enums_cover_all_carbon_variants` test that constructs `{"VariantName": <minimal_payload>}` JSON for every Carbon variant and asserts the mirror enum (`*InstructionKind`, `*EventEnvelope`) deserializes it. This bridges the compile-time `classify_decoded()` guard with the runtime serde dispatch — if someone adds a Carbon variant to `classify_decoded()` but forgets the mirror enum, this test catches it.
 
@@ -64,14 +78,31 @@ tests/
 - Fixtures loaded via `env!("CARGO_MANIFEST_DIR")` + path
 - Serde `default` behavior ignores unknown fields — fixtures from main crate (with extra fields) work directly
 
+## Features
+
+```toml
+[features]
+default = ["native"]
+native = ["solana-pubkey", "carbon-*-decoder"]  # Full Solana/Carbon deps for production
+wasm = ["wasm-bindgen", "serde-wasm-bindgen"]   # WASM target for docs-site
+```
+
 ## Commands
 
 ```bash
-cargo test                  # 137 tests (110 unit + 27 integration)
+cargo test                  # 140 tests (113 unit + 27 integration) — native feature
+cargo test --features wasm  # 150 tests (123 unit + 27 integration) — native+wasm
 cargo clippy                # pedantic + deny(unwrap_used, expect_used, panic, ...)
 cargo fmt                   # format
 cargo llvm-cov              # coverage
 cargo llvm-cov --html       # HTML report → target/llvm-cov/html/
+
+# WASM build (for docs-site)
+wasm-pack build --target bundler --release --out-dir docs-site/src/wasm-pkg -- --features wasm --no-default-features
+
+# Docs-site
+cd docs-site && npm run dev   # includes wasm build
+cd docs-site && npm run build # production build
 ```
 
 ## Test Layers
@@ -98,6 +129,9 @@ Known-variant detection uses strum::VariantNames on event envelopes — no manua
 - Mirror enums must keep `serde_json::Value` inner type on instruction variants to consume any JSON payload (including `null` for args-less instructions).
 - Mirror enum alignment tests need minimal valid JSON payloads (not just `{}`), because inner structs like `DcaKeyHolder { dca_key: String }` have required fields.
 - `SnapshotDelta::delta` is always `>= 0` even if snapshot regresses. Regression tracked as separate bool.
-- No `EventType → LifecycleTransition` mapping function exists in this crate — the consumer (defi-tracker) defines it. End-to-end lifecycle tests define the mapping inline via `event_type_to_transition()` and `event_to_transition()`, including `NotRequired -> MetadataOnly`.
+- `EventType → LifecycleTransition` mapping is canonical in `src/lifecycle/mapping.rs`. End-to-end lifecycle tests use it directly.
+- WASM feature uses `cdylib` + `rlib` crate types — `cdylib` required for wasm-pack, `rlib` required for `cargo test`.
+- `EventType::as_ref()` returns snake_case (strum). WASM API uses `event_type_to_pascal()` helper for PascalCase output matching TS conventions.
+- Docs-site uses `vite-plugin-wasm` + `vite-plugin-top-level-await` for transparent WASM imports (no manual `init()`).
 - Limit V1 instruction fixtures contain only `CancelOrder` records (793 from real data). V1 event fixtures are synthetic.
 - Pre-commit hooks via `cargo-husky`: runs test, clippy, fmt on commit.

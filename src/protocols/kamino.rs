@@ -29,6 +29,24 @@ pub enum KaminoInstructionKind {
     LogUserSwapBalances(serde_json::Value),
 }
 
+#[cfg(feature = "wasm")]
+pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
+    ("CreateOrder", EventType::Created),
+    ("TakeOrder", EventType::FillCompleted),
+    ("FlashTakeOrderStart", EventType::FillInitiated),
+    ("FlashTakeOrderEnd", EventType::FillCompleted),
+    ("CloseOrderAndClaimTip", EventType::Closed),
+];
+
+#[cfg(feature = "wasm")]
+pub const EVENT_EVENT_TYPES: &[(&str, EventType)] = &[
+    ("OrderDisplayEvent", EventType::FillCompleted),
+    ("UserSwapBalancesEvent", EventType::FillCompleted),
+];
+
+#[cfg(feature = "wasm")]
+pub const CLOSED_VARIANTS: &[&str] = &["Completed", "Cancelled", "Expired"];
+
 /// Kamino Limit Order protocol adapter (zero-sized, stored as a static).
 #[derive(Debug)]
 pub struct KaminoAdapter;
@@ -293,7 +311,7 @@ impl KaminoAdapter {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "native"))]
     pub fn classify_decoded(
         decoded: &carbon_kamino_limit_order_decoder::instructions::KaminoLimitOrderInstruction,
     ) -> Option<EventType> {
@@ -745,6 +763,46 @@ mod tests {
             "output_amount": 4_500_u64
         });
         assert!(KaminoAdapter::parse_create_args(&args).is_err());
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn instruction_constants_match_classify() {
+        for (name, expected) in INSTRUCTION_EVENT_TYPES {
+            let ix = RawInstruction {
+                id: 1,
+                signature: "sig".to_string(),
+                instruction_index: 0,
+                program_id: "p".to_string(),
+                inner_program_id: "p".to_string(),
+                instruction_name: name.to_string(),
+                accounts: None,
+                args: None,
+                slot: 1,
+            };
+            assert_eq!(
+                KaminoAdapter.classify_instruction(&ix).as_ref(),
+                Some(expected),
+                "INSTRUCTION_EVENT_TYPES mismatch for {name}"
+            );
+        }
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn event_constants_match_resolve() {
+        let ctx = ResolveContext {
+            pre_fetched_order_pdas: Some(vec!["pda".to_string()]),
+        };
+        for (name, expected) in EVENT_EVENT_TYPES {
+            let fields = serde_json::json!({(*name): {}});
+            let result = resolve(fields, "sig", &ctx);
+            let (event_type, _, _) = result.expect("should return Some").expect("should be Ok");
+            assert_eq!(
+                &event_type, expected,
+                "EVENT_EVENT_TYPES mismatch for {name}"
+            );
+        }
     }
 
     #[test]
