@@ -2,7 +2,15 @@
 name = "defi-tracker-lifecycle"
 version = "0.1.0"
 edition = "2024"
-exclude = ["docs-lite", "tests"]
+description = "Pure-logic crate for DeFi order lifecycle tracking on Solana — classification, correlation, and state machine logic"
+license = "MIT"
+authors = ["Ohad Dahan <ohaddahan@gmail.com>"]
+documentation = "https://docs.rs/defi-tracker-lifecycle"
+repository = "https://github.com/ohaddahan/defi-tracker-lifecycle"
+homepage = "https://ohaddahan.github.io/defi-tracker-lifecycle/"
+keywords = ["solana", "defi", "lifecycle", "jupiter", "kamino"]
+categories = ["cryptography::cryptocurrencies"]
+exclude = ["docs-site", "pkg", "scripts", ".github", "CLAUDE.md", "FOR_USER.md", "SECURITY.md", ".claude"]
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
