@@ -73,31 +73,28 @@ flowchart TD
 
 ```rust
 use defi_tracker_lifecycle::{
-    Protocol, adapter_for, ResolveContext,
-    LifecycleEngine, LifecycleTransition, TransitionDecision,
+    Protocol, adapter_for, event_type_to_transition, ResolveContext,
+    LifecycleEngine, TerminalStatus, TransitionDecision,
 };
 
 // 1. Identify protocol from program ID
-let protocol = Protocol::from_program_id("DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M");
-let adapter = adapter_for(protocol.unwrap());
+let protocol = Protocol::from_program_id("DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M")
+    .ok_or("unknown program")?;
+let adapter = adapter_for(protocol);
 
 // 2. Classify + resolve an event in one pass
 let ctx = ResolveContext { pre_fetched_order_pdas: None };
 let (event_type, correlation, payload) = adapter
     .classify_and_resolve_event(&raw_event, &ctx)
-    .unwrap()  // None = unknown event variant
-    .unwrap(); // Err = malformed known event payload
+    .ok_or("unknown event variant")?  // None = unknown event variant
+    .map_err(|e| e.to_string())?;     // Err = malformed known event payload
 
-// 3. Map EventType to LifecycleTransition (your responsibility)
-//    Recommended: treat CorrelationOutcome::NotRequired as MetadataOnly.
-let transition = LifecycleTransition::FillDelta;
+// 3. Map EventType to LifecycleTransition via the canonical mapping
+let transition = event_type_to_transition(&event_type, None);
 
 // 4. Check state transition (pass None if not terminal)
 let current_terminal: Option<TerminalStatus> = None;
-let decision = LifecycleEngine::decide_transition(
-    current_terminal,
-    transition,
-);
+let decision = LifecycleEngine::decide_transition(current_terminal, transition);
 match decision {
     TransitionDecision::Apply => { /* update order status */ }
     TransitionDecision::IgnoreTerminalViolation => { /* order is terminal, skip */ }
@@ -107,7 +104,7 @@ match decision {
 ## Testing
 
 ```bash
-cargo test                  # run all 137 tests (110 unit + 27 integration)
+cargo test                  # run all 140 tests (113 unit + 27 integration)
 cargo clippy                # lint check
 ```
 

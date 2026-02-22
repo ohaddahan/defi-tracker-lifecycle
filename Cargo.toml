@@ -1,6 +1,6 @@
 [package]
 name = "defi-tracker-lifecycle"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Pure-logic crate for DeFi order lifecycle tracking on Solana — classification, correlation, and state machine logic"
 license = "MIT"
@@ -61,11 +61,11 @@ print_stderr = "deny"
 [features]
 default = ["native"]
 native = [
-    "dep:solana-pubkey",
-    "dep:carbon-jupiter-dca-decoder",
-    "dep:carbon-jupiter-limit-order-decoder",
-    "dep:carbon-jupiter-limit-order-2-decoder",
-    "dep:carbon-kamino-limit-order-decoder",
+  "dep:solana-pubkey",
+  "dep:carbon-jupiter-dca-decoder",
+  "dep:carbon-jupiter-limit-order-decoder",
+  "dep:carbon-jupiter-limit-order-2-decoder",
+  "dep:carbon-kamino-limit-order-decoder",
 ]
 wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen"]
 
