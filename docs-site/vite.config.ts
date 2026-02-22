@@ -6,5 +6,5 @@ import topLevelAwait from 'vite-plugin-top-level-await'
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), wasm(), topLevelAwait()],
-  base: '/defi-tracker-lifecycle/',
+  base: '/',
 })
