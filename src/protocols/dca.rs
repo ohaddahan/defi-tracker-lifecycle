@@ -355,12 +355,8 @@ impl DcaAdapter {
                 "in_amount_per_cycle",
             )?,
             cycle_frequency,
-            min_out_amount: min_out_amount
-                .map(|v| ProtocolHelpers::checked_u64_to_i64(v, "min_out_amount"))
-                .transpose()?,
-            max_out_amount: max_out_amount
-                .map(|v| ProtocolHelpers::checked_u64_to_i64(v, "max_out_amount"))
-                .transpose()?,
+            min_out_amount: min_out_amount.and_then(ProtocolHelpers::optional_u64_to_i64),
+            max_out_amount: max_out_amount.and_then(ProtocolHelpers::optional_u64_to_i64),
             start_at,
         })
     }

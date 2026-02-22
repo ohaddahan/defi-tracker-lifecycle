@@ -159,6 +159,12 @@ impl ProtocolHelpers {
         })
     }
 
+    /// Converts `u64` to `i64` for optional fields.
+    /// Returns `None` if the value exceeds `i64::MAX` (e.g. `u64::MAX` sentinel for "no limit").
+    pub fn optional_u64_to_i64(value: u64) -> Option<i64> {
+        i64::try_from(value).ok()
+    }
+
     /// Converts `u16` to `i16`, returning an error if the value exceeds `i16::MAX`.
     pub fn checked_u16_to_i16(value: u16, field: &str) -> Result<i16, Error> {
         i16::try_from(value).map_err(|_| Error::Protocol {

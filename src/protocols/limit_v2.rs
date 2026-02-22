@@ -291,9 +291,7 @@ impl LimitV2Adapter {
         } = params;
 
         Ok(LimitV2CreateArgs {
-            unique_id: unique_id
-                .map(|v| ProtocolHelpers::checked_u64_to_i64(v, "unique_id"))
-                .transpose()?,
+            unique_id: unique_id.and_then(ProtocolHelpers::optional_u64_to_i64),
             making_amount: ProtocolHelpers::checked_u64_to_i64(making_amount, "making_amount")?,
             taking_amount: ProtocolHelpers::checked_u64_to_i64(taking_amount, "taking_amount")?,
             expired_at,
