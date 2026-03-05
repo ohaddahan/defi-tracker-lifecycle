@@ -357,7 +357,7 @@ impl DcaAdapter {
             cycle_frequency,
             min_out_amount: min_out_amount.and_then(ProtocolHelpers::optional_u64_to_i64),
             max_out_amount: max_out_amount.and_then(ProtocolHelpers::optional_u64_to_i64),
-            start_at,
+            start_at: start_at.filter(|&ts| ts > 0),
         })
     }
 
@@ -598,6 +598,33 @@ mod tests {
         assert_eq!(parsed.min_out_amount, Some(10));
         assert_eq!(parsed.max_out_amount, Some(500));
         assert_eq!(parsed.start_at, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn parse_create_args_treats_zero_start_at_as_none() {
+        let args = serde_json::json!({
+            "in_amount": 1_000_u64,
+            "in_amount_per_cycle": 100_u64,
+            "cycle_frequency": 60_i64,
+            "start_at": 0_i64
+        });
+        let parsed = DcaAdapter::parse_create_args(&args).unwrap();
+        assert!(parsed.start_at.is_none(), "start_at: 0 should become None");
+    }
+
+    #[test]
+    fn parse_create_args_treats_negative_start_at_as_none() {
+        let args = serde_json::json!({
+            "in_amount": 1_000_u64,
+            "in_amount_per_cycle": 100_u64,
+            "cycle_frequency": 60_i64,
+            "start_at": -1_i64
+        });
+        let parsed = DcaAdapter::parse_create_args(&args).unwrap();
+        assert!(
+            parsed.start_at.is_none(),
+            "negative start_at should become None"
+        );
     }
 
     #[test]

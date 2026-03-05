@@ -1,6 +1,6 @@
 [package]
 name = "defi-tracker-lifecycle"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Pure-logic crate for DeFi order lifecycle tracking on Solana — classification, correlation, and state machine logic"
 license = "MIT"
