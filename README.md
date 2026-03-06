@@ -2,6 +2,8 @@
 
 Pure-logic crate for DeFi order lifecycle tracking on Solana. No IO, no database — just classification, correlation, and state machine logic.
 
+Documentation site: <https://defi-tracker-lifecycle.turbine.cash/>
+
 ## Supported Protocols
 
 | Protocol | Program | Description |
@@ -73,7 +75,7 @@ flowchart TD
 
 ```rust
 use defi_tracker_lifecycle::{
-    Protocol, adapter_for, event_type_to_transition, ResolveContext,
+    EventPayload, Protocol, adapter_for, event_type_to_transition, ResolveContext,
     LifecycleEngine, TerminalStatus, TransitionDecision,
 };
 
@@ -90,7 +92,12 @@ let (event_type, correlation, payload) = adapter
     .map_err(|e| e.to_string())?;     // Err = malformed known event payload
 
 // 3. Map EventType to LifecycleTransition via the canonical mapping
-let transition = event_type_to_transition(&event_type, None);
+let closed_status = match &payload {
+    EventPayload::DcaClosed { status } => Some(*status),
+    EventPayload::KaminoDisplay { terminal_status, .. } => *terminal_status,
+    _ => None,
+};
+let transition = event_type_to_transition(&event_type, closed_status);
 
 // 4. Check state transition (pass None if not terminal)
 let current_terminal: Option<TerminalStatus> = None;
@@ -104,8 +111,9 @@ match decision {
 ## Testing
 
 ```bash
-cargo test                  # run all 140 tests (113 unit + 27 integration)
-cargo clippy                # lint check
+cargo test
+cargo test --all-features
+cargo clippy --all-targets --all-features
 ```
 
 ### Test Layers

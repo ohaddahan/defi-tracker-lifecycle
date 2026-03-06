@@ -4,14 +4,22 @@ import type { ReactNode } from 'react';
 interface Props {
   id: string;
   title: string;
+  description?: string;
   children: ReactNode;
   className?: string;
   index?: number;
 }
 
-export default function Section({ id, title, children, className = '', index = 0 }: Props) {
+export default function Section({
+  id,
+  title,
+  description,
+  children,
+  className = '',
+  index = 0,
+}: Props) {
   return (
-    <section id={id} className={`relative py-20 px-4 sm:px-8 ${className}`}>
+    <section id={id} className={`section-anchor relative px-4 py-20 sm:px-8 ${className}`}>
       {index % 2 === 0 && (
         <div className="absolute inset-0 bg-bg-elevated pointer-events-none" />
       )}
@@ -30,6 +38,9 @@ export default function Section({ id, title, children, className = '', index = 0
             </span>
           </div>
           <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
+          {description ? (
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-dim">{description}</p>
+          ) : null}
         </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 30 }}

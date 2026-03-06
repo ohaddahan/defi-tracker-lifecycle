@@ -1,105 +1,118 @@
-import { useCallback, useRef, useState } from 'react';
-import { useLifecycleState } from '../../hooks/useLifecycleState';
-import type { EventType, ProtocolId } from '../../data/protocols';
+import { useState } from 'react';
 import type { Preset } from '../../data/presets';
-import ProtocolSelector from './ProtocolSelector';
-import EventButtons from './EventButtons';
-import PresetBar from './PresetBar';
-import StateDiagram from './StateDiagram';
-import EventLog from './EventLog';
+import type { EventType, ProtocolId } from '../../data/protocols';
+import { useLifecycleState } from '../../hooks/useLifecycleState';
 import CurrentStateBar from './CurrentStateBar';
+import EventButtons from './EventButtons';
+import EventLog from './EventLog';
+import PresetBar from './PresetBar';
+import ProtocolSelector from './ProtocolSelector';
 import SnapshotDelta from './SnapshotDelta';
+import StateDiagram from './StateDiagram';
 
 export default function Explorer() {
   const state = useLifecycleState('dca');
   const [runningPreset, setRunningPreset] = useState<string | null>(null);
-  const [lastTransition, setLastTransition] = useState<{
-    target: string;
-    decision: string;
-  } | null>(null);
-  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const fireWithAnimation = useCallback(
-    (eventType: EventType, closedStatus: string | null) => {
-      state.fireEvent(eventType, closedStatus);
+  async function handlePreset(preset: Preset) {
+    setRunningPreset(preset.name);
+    state.setProtocol(preset.protocol);
 
-      const log = state.log;
-      const latest = log.length > 0 ? log[log.length - 1] : null;
-      const target = latest ? latest.to : state.currentStatus ?? 'none';
-      const decision = latest ? latest.decision : 'Apply';
+    for (const event of preset.events) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
 
-      setLastTransition({ target, decision });
-      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
-      flashTimeoutRef.current = setTimeout(() => setLastTransition(null), 700);
-    },
-    [state],
-  );
-
-  const handlePreset = useCallback(
-    async (preset: Preset) => {
-      setRunningPreset(preset.name);
-      state.reset();
-      state.setProtocol(preset.protocol);
-
-      for (const ev of preset.events) {
-        await new Promise((r) => setTimeout(r, 400));
-        if (ev.includes(':')) {
-          const [type, status] = ev.split(':');
-          fireWithAnimation(type as EventType, status);
-        } else {
-          fireWithAnimation(ev as EventType, null);
-        }
+      if (event.includes(':')) {
+        const [type, status] = event.split(':');
+        state.fireEvent(type as EventType, status);
+      } else {
+        state.fireEvent(event as EventType, null);
       }
-      setRunningPreset(null);
-    },
-    [state, fireWithAnimation],
-  );
+    }
 
-  const handleProtocolChange = useCallback(
-    (p: ProtocolId) => {
-      state.setProtocol(p);
-    },
-    [state],
-  );
+    setRunningPreset(null);
+  }
+
+  function handleProtocolChange(protocol: ProtocolId) {
+    state.setProtocol(protocol);
+  }
 
   return (
-    <div className="rounded-xl border border-border bg-panel overflow-hidden glow-border">
-      <div className="flex flex-col lg:flex-row">
-        {/* Sidebar */}
-        <div className="w-full lg:w-80 lg:min-w-[320px] lg:border-r border-border flex flex-col bg-panel">
-          <SidebarSection label="Presets">
+    <div className="overflow-hidden rounded-2xl border border-border bg-panel shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+      <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="border-b border-border bg-panel xl:border-b-0 xl:border-r">
+          <SidebarSection
+            label="Scenarios"
+            description="Replay common flows to see which transitions apply and which ones are blocked."
+          >
             <PresetBar onRun={handlePreset} running={runningPreset} />
           </SidebarSection>
-          <SidebarSection label="Protocol">
-            <ProtocolSelector selected={state.protocol} onSelect={handleProtocolChange} />
+
+          <SidebarSection
+            label="Protocol"
+            description="Switching protocols resets the current run so the diagram and log stay honest."
+          >
+            <ProtocolSelector
+              selected={state.protocol}
+              onSelect={handleProtocolChange}
+            />
           </SidebarSection>
-          <SidebarSection label="Fire Event">
+
+          <SidebarSection
+            label="Fire Canonical Events"
+            description="Use the canonical EventType buttons here. Raw variant names stay in the protocol reference."
+          >
             <EventButtons
               protocol={state.protocol}
               isTerminal={state.isTerminal}
-              onFire={fireWithAnimation}
+              onFire={state.fireEvent}
             />
           </SidebarSection>
-          <SidebarSection label="Snapshot Delta Calculator">
+
+          <SidebarSection
+            label="Snapshot Delta"
+            description="Useful when you consume cumulative balance snapshots and need the crate’s non-negative delta rule."
+            noBorder
+          >
             <SnapshotDelta />
           </SidebarSection>
-          <SidebarSection label="Event Log" noBorder>
-            <div />
-          </SidebarSection>
-          <EventLog log={state.log} />
-        </div>
+        </aside>
 
-        {/* Main area */}
-        <div className="flex-1 flex flex-col bg-bg-elevated/50">
+        <section className="min-w-0 bg-bg-elevated/40">
           <CurrentStateBar
             currentStatus={state.currentStatus}
             fills={state.fills}
             onReset={state.reset}
           />
-          <div className="flex-1 p-6 min-h-[400px]">
-            <StateDiagram currentStatus={state.currentStatus} lastTransition={lastTransition} />
+
+          <div className="grid grid-cols-1 gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 border-b border-border lg:border-b-0 lg:border-r">
+              <div className="border-b border-border px-6 py-4">
+                <h3 className="text-lg font-semibold text-text">State Diagram</h3>
+                <p className="mt-1 text-sm text-dim">
+                  The diagram reflects the exact decision log below. Nothing here is inferred from
+                  stale local state anymore.
+                </p>
+              </div>
+              <div className="min-h-[440px] p-4 sm:p-6">
+                <StateDiagram
+                  currentStatus={state.currentStatus}
+                  lastTransition={state.lastTransition}
+                />
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <div className="border-b border-border px-6 py-4">
+                <h3 className="text-lg font-semibold text-text">Decision Log</h3>
+                <p className="mt-1 text-sm text-dim">
+                  Each row shows the before state, mapped transition, after state, and whether the
+                  lifecycle engine applied or ignored it.
+                </p>
+              </div>
+              <EventLog log={state.log} />
+            </div>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
@@ -107,19 +120,22 @@ export default function Explorer() {
 
 function SidebarSection({
   label,
+  description,
   children,
   noBorder = false,
 }: {
   label: string;
+  description: string;
   children: React.ReactNode;
   noBorder?: boolean;
 }) {
   return (
-    <div className={`p-4 ${noBorder ? '' : 'border-b border-border'}`}>
-      <div className="text-[10px] text-dim uppercase tracking-widest font-semibold mb-2.5 font-mono">
+    <section className={`p-5 ${noBorder ? '' : 'border-b border-border'}`}>
+      <div className="text-[10px] font-mono font-semibold uppercase tracking-widest text-dim">
         {label}
       </div>
-      {children}
-    </div>
+      <p className="mt-2 text-sm leading-relaxed text-dim">{description}</p>
+      <div className="mt-4">{children}</div>
+    </section>
   );
 }

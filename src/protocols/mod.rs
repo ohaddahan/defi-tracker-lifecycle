@@ -80,7 +80,7 @@ impl Protocol {
 }
 
 /// Canonical event classification shared across all protocols.
-#[derive(Debug, Clone, PartialEq, Eq, strum_macros::Display, strum_macros::AsRefStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum_macros::Display, strum_macros::AsRefStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum EventType {
     /// Order was created on-chain.
@@ -122,6 +122,16 @@ pub struct AccountInfo {
 pub struct ProtocolHelpers;
 
 impl ProtocolHelpers {
+    /// Looks up an [`EventType`] by name from a static mapping table.
+    pub fn lookup_event_type(
+        name: &str,
+        mapping: &[(&'static str, EventType)],
+    ) -> Option<EventType> {
+        mapping
+            .iter()
+            .find_map(|(candidate, event_type)| (*candidate == name).then_some(*event_type))
+    }
+
     /// Deserializes a JSON array of accounts into [`AccountInfo`] structs.
     pub fn parse_accounts(accounts_json: &serde_json::Value) -> Result<Vec<AccountInfo>, Error> {
         serde_json::from_value(accounts_json.clone()).map_err(|e| Error::Protocol {
@@ -174,7 +184,7 @@ impl ProtocolHelpers {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions")]
+#[expect(clippy::unwrap_used, clippy::panic, reason = "test assertions")]
 mod tests {
     use super::*;
     use crate::lifecycle::adapters::{ProtocolAdapter, adapter_for};

@@ -99,7 +99,7 @@ fn dca_classify_instructions_from_fixture() {
             .unwrap_or_else(|| panic!("missing fixture for {name}"));
         assert_eq!(
             adapter.classify_instruction(ix),
-            Some(event_type.clone()),
+            Some(*event_type),
             "wrong classification for {name}"
         );
     }
@@ -271,7 +271,7 @@ fn kamino_classify_instructions_from_fixture() {
             .unwrap_or_else(|| panic!("missing fixture for {name}"));
         assert_eq!(
             adapter.classify_instruction(ix),
-            Some(event_type.clone()),
+            Some(*event_type),
             "wrong classification for {name}"
         );
     }
@@ -476,7 +476,7 @@ fn limit_v2_classify_instructions_from_fixture() {
             .unwrap_or_else(|| panic!("missing fixture for {name}"));
         assert_eq!(
             adapter.classify_instruction(ix),
-            Some(event_type.clone()),
+            Some(*event_type),
             "wrong classification for {name}"
         );
     }

@@ -1,73 +1,41 @@
-# React + TypeScript + Vite
+# docs-site
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Integration-first documentation site for `defi-tracker-lifecycle`.
 
-Currently, two official plugins are available:
+The site is a small React + Vite application that consumes the crate’s WASM bindings for protocol
+metadata, lifecycle transitions, and variant lookup helpers.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Local Development
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd docs-site
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+`npm run dev` regenerates the WASM bindings first, then starts Vite.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Useful Commands
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd docs-site
+npm run wasm         # rebuild docs-site/src/wasm-pkg from the Rust crate
+npm run lint         # eslint
+npm run build        # regenerate WASM, type-check, and build the static site
 ```
+
+## WASM Output
+
+The generated bindings live in `docs-site/src/wasm-pkg/`.
+
+- They are build artifacts, not hand-edited source files.
+- The folder is gitignored.
+- If you change `src/wasm.rs`, regenerate the bindings before running the site or building it.
+
+## What The Site Covers
+
+- Quick-start integration flow for the crate
+- Lifecycle playground powered by the crate’s transition logic
+- Static raw-variant lookup for protocol instruction and event names
+- Protocol-specific integration notes for DCA, Jupiter Limit v1/v2, and Kamino
+- Reliability/test-layer overview

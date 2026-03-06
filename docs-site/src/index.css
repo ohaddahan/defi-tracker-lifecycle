@@ -22,16 +22,39 @@
 }
 
 html {
+  color-scheme: dark;
   scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
+  overflow-x: hidden;
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-display);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+body,
+button,
+input,
+textarea,
+code,
+pre {
+  font-variant-numeric: tabular-nums;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+a,
+button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 ::selection {
@@ -58,13 +81,37 @@ body {
 }
 
 @keyframes gradient-shift {
-  0%, 100% { opacity: 0.4; transform: translate(-10%, -10%) scale(1); }
-  50% { opacity: 0.6; transform: translate(10%, 10%) scale(1.1); }
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translate(-10%, -10%) scale(1);
+  }
+
+  50% {
+    opacity: 0.6;
+    transform: translate(10%, 10%) scale(1.1);
+  }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.6; }
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes flash-stroke {
+  from {
+    opacity: 0.9;
+  }
+
+  to {
+    opacity: 0;
+  }
 }
 
 .gradient-orb {
@@ -75,21 +122,20 @@ body {
   animation: pulse-glow 3s ease-in-out infinite;
 }
 
+.state-flash-apply,
+.state-flash-block {
+  animation: flash-stroke 0.7s ease-out forwards;
+}
+
 .noise-overlay {
   position: fixed;
   inset: 0;
-  pointer-events: none;
   z-index: 9999;
+  pointer-events: none;
   opacity: 0.025;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
   background-repeat: repeat;
   background-size: 256px 256px;
-}
-
-.glass-panel {
-  background: linear-gradient(135deg, rgba(18, 19, 26, 0.9), rgba(18, 19, 26, 0.7));
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--color-border);
 }
 
 .glow-border {
@@ -111,13 +157,52 @@ body {
 
 .accent-gradient {
   background: linear-gradient(135deg, #14f195, #9945ff);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .accent-gradient-bg {
   background: linear-gradient(135deg, #14f195, #9945ff);
+}
+
+.focus-ring {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  box-shadow:
+    0 0 0 1px rgba(20, 241, 149, 0.45),
+    0 0 0 4px rgba(20, 241, 149, 0.12);
+}
+
+.ui-transition {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 180ms;
+  transition-timing-function: ease;
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 10000;
+  transform: translateY(-140%);
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+.section-anchor {
+  scroll-margin-top: 7rem;
 }
 
 input[type="number"]::-webkit-inner-spin-button,
@@ -125,6 +210,28 @@ input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
 input[type="number"] {
   -moz-appearance: textfield;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .gradient-orb,
+  .pulse-glow,
+  .state-flash-apply,
+  .state-flash-block {
+    animation: none !important;
+  }
 }

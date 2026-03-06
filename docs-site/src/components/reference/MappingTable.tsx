@@ -19,20 +19,26 @@ const TYPE_COLORS: Record<EventType, string> = {
 
 export default function MappingTable({ title, entries }: Props) {
   return (
-    <div className="mb-4">
-      <h4 className="text-[10px] text-dim uppercase tracking-widest font-mono font-semibold mb-2.5">{title}</h4>
+    <div className="mb-4 min-w-0">
+      <h4 className="mb-2.5 text-[10px] font-mono font-semibold uppercase tracking-widest text-dim">
+        {title}
+      </h4>
       <div className="rounded-lg border border-border overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-bg-elevated">
-              <th className="px-3 py-2 text-left text-[10px] text-dim font-mono font-medium uppercase tracking-wider">Name</th>
-              <th className="px-3 py-2 text-left text-[10px] text-dim font-mono font-medium uppercase tracking-wider">EventType</th>
+              <th className="px-3 py-2 text-left text-[10px] text-dim font-mono font-medium uppercase tracking-wider">
+                Name
+              </th>
+              <th className="px-3 py-2 text-left text-[10px] text-dim font-mono font-medium uppercase tracking-wider">
+                EventType
+              </th>
             </tr>
           </thead>
           <tbody>
             {entries.map(([name, type]) => (
-              <tr key={name} className="border-t border-border/30 hover:bg-panel-hover/50 transition-colors">
-                <td className="px-3 py-1.5 font-mono text-xs text-text/80">{name}</td>
+              <tr key={name} className="border-t border-border/30 hover:bg-panel-hover/50">
+                <td className="break-all px-3 py-1.5 font-mono text-xs text-text/80">{name}</td>
                 <td className={`px-3 py-1.5 font-mono text-xs font-semibold ${TYPE_COLORS[type]}`}>
                   {type}
                 </td>

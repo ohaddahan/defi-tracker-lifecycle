@@ -1,26 +1,27 @@
-// Powered by WASM — logic from src/protocols/ classify functions
-
 import type { EventType, ProtocolId } from '../data/protocols';
-import { wasmClassifyJson } from './wasm';
+import { wasmLookupVariant } from './wasm';
 
-export interface ClassificationResult {
+export interface VariantLookupResult {
   variantName: string;
   source: 'event' | 'instruction';
   eventType: EventType;
   transition: string;
-  decision: string;
+  decisionFromNone: string;
+  notes: string[];
 }
 
-export function classifyJson(
+export function lookupVariant(
   json: string,
   protocolId: ProtocolId,
-): ClassificationResult | { error: string } {
+): VariantLookupResult | { error: string } {
   const wasmProtocol = protocolIdToWasm(protocolId);
-  const result = wasmClassifyJson(wasmProtocol, json);
+  const result = wasmLookupVariant(wasmProtocol, json);
+
   if (result && typeof result === 'object' && 'error' in result) {
     return { error: result.error as string };
   }
-  return result as ClassificationResult;
+
+  return result as VariantLookupResult;
 }
 
 function protocolIdToWasm(id: ProtocolId): string {

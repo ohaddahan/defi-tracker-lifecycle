@@ -16,18 +16,18 @@ const STATE_STYLES: Record<string, string> = {
 export default function EventLog({ log }: Props) {
   if (log.length === 0) {
     return (
-      <div className="text-dim text-xs p-4 italic opacity-50">
-        Fire events to see the log...
+      <div className="p-4 text-sm text-dim">
+        Run a scenario or fire an event to see the transition log.
       </div>
     );
   }
 
   return (
-    <div className="overflow-y-auto max-h-64 px-4 py-2">
+    <div className="max-h-80 overflow-y-auto px-4 py-2">
       {[...log].reverse().map((entry) => (
         <div
           key={entry.step}
-          className="flex items-center gap-2 py-1.5 border-b border-border/30 font-mono text-[11px]"
+          className="flex min-w-0 items-center gap-2 border-b border-border/30 py-2 font-mono text-[11px]"
         >
           <span className="text-dim/60 min-w-[20px] text-right text-[10px]">{entry.step}</span>
           <span
@@ -36,7 +36,9 @@ export default function EventLog({ log }: Props) {
             {entry.from}
           </span>
           <span className="text-dim/40">→</span>
-          <span className="font-medium text-text/80">{entry.transition}</span>
+          <span className="min-w-0 break-words font-medium text-text/80">
+            {entry.transition}
+          </span>
           <span className="text-dim/40">→</span>
           <span
             className={`rounded-md px-1.5 py-px text-[10px] font-medium ${STATE_STYLES[entry.to] ?? STATE_STYLES.none}`}

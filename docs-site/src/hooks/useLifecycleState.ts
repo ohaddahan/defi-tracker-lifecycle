@@ -1,7 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useReducer } from 'react';
 import type { EventType, ProtocolId } from '../data/protocols';
 import { decideTransition, isTerminal, type TransitionDecision } from '../engine/lifecycle';
-import { eventTypeToTransition, transitionToString, transitionTarget } from '../engine/eventMapping';
+import {
+  eventTypeToTransition,
+  transitionTarget,
+  transitionToString,
+} from '../engine/eventMapping';
 
 export interface LogEntry {
   step: number;
@@ -13,77 +17,118 @@ export interface LogEntry {
   closedStatus: string | null;
 }
 
-interface LifecycleState {
+export interface TransitionFlash {
+  step: number;
+  target: string;
+  decision: TransitionDecision;
+  transition: string;
+}
+
+interface LifecycleSnapshot {
   protocol: ProtocolId;
   currentStatus: string | null;
   fills: number;
   log: LogEntry[];
-  setProtocol: (p: ProtocolId) => void;
+  lastTransition: TransitionFlash | null;
+}
+
+interface LifecycleState extends LifecycleSnapshot {
+  setProtocol: (protocol: ProtocolId) => void;
   fireEvent: (eventType: EventType, closedStatus: string | null) => void;
   reset: () => void;
   isTerminal: boolean;
 }
 
-export function useLifecycleState(initialProtocol: ProtocolId = 'dca'): LifecycleState {
-  const [protocol, setProtocol] = useState<ProtocolId>(initialProtocol);
-  const [currentStatus, setCurrentStatus] = useState<string | null>(null);
-  const [fills, setFills] = useState(0);
-  const [log, setLog] = useState<LogEntry[]>([]);
+type Action =
+  | { type: 'set_protocol'; protocol: ProtocolId }
+  | { type: 'reset' }
+  | { type: 'fire_event'; eventType: EventType; closedStatus: string | null };
 
-  const fireEvent = useCallback(
-    (eventType: EventType, closedStatus: string | null) => {
-      const transition = eventTypeToTransition(eventType, closedStatus ?? undefined);
-      const transStr = transitionToString(transition);
-      const decision = decideTransition(currentStatus, transition);
-      const from = currentStatus ?? 'none';
+function createSnapshot(protocol: ProtocolId): LifecycleSnapshot {
+  return {
+    protocol,
+    currentStatus: null,
+    fills: 0,
+    log: [],
+    lastTransition: null,
+  };
+}
+
+function reduceLifecycleState(
+  snapshot: LifecycleSnapshot,
+  action: Action,
+): LifecycleSnapshot {
+  switch (action.type) {
+    case 'set_protocol':
+      return createSnapshot(action.protocol);
+    case 'reset':
+      return createSnapshot(snapshot.protocol);
+    case 'fire_event': {
+      const transition = eventTypeToTransition(
+        action.eventType,
+        action.closedStatus ?? undefined,
+      );
+      const transitionLabel = transitionToString(transition);
+      const decision = decideTransition(snapshot.currentStatus, transition);
+      const from = snapshot.currentStatus ?? 'none';
       let to = from;
+      let nextStatus = snapshot.currentStatus;
+      let fills = snapshot.fills;
 
       if (decision === 'Apply') {
         const target = transitionTarget(transition);
         if (target) {
-          setCurrentStatus(target);
+          nextStatus = target;
           to = target;
-        } else if (currentStatus === null && transition.type !== 'MetadataOnly') {
-          setCurrentStatus('active');
+        } else if (snapshot.currentStatus === null && transition.type !== 'MetadataOnly') {
+          nextStatus = 'active';
           to = 'active';
-        } else {
-          to = currentStatus ?? 'none';
         }
+
         if (transition.type === 'FillDelta') {
-          setFills((f) => f + 1);
+          fills += 1;
         }
       }
 
-      setLog((prev) => [
-        ...prev,
-        {
-          step: prev.length + 1,
-          from,
-          transition: transStr,
-          to,
+      const entry: LogEntry = {
+        step: snapshot.log.length + 1,
+        from,
+        transition: transitionLabel,
+        to,
+        decision,
+        eventType: action.eventType,
+        closedStatus: action.closedStatus,
+      };
+
+      return {
+        ...snapshot,
+        currentStatus: nextStatus,
+        fills,
+        log: [...snapshot.log, entry],
+        lastTransition: {
+          step: entry.step,
+          target: to,
           decision,
-          eventType,
-          closedStatus,
+          transition: transitionLabel,
         },
-      ]);
-    },
-    [currentStatus],
+      };
+    }
+  }
+}
+
+export function useLifecycleState(initialProtocol: ProtocolId = 'dca'): LifecycleState {
+  const [snapshot, dispatch] = useReducer(
+    reduceLifecycleState,
+    initialProtocol,
+    createSnapshot,
   );
 
-  const reset = useCallback(() => {
-    setCurrentStatus(null);
-    setFills(0);
-    setLog([]);
-  }, []);
-
   return {
-    protocol,
-    currentStatus,
-    fills,
-    log,
-    setProtocol,
-    fireEvent,
-    reset,
-    isTerminal: isTerminal(currentStatus),
+    ...snapshot,
+    setProtocol: (protocol) => dispatch({ type: 'set_protocol', protocol }),
+    fireEvent: (eventType, closedStatus) =>
+      dispatch({ type: 'fire_event', eventType, closedStatus }),
+    reset: () => dispatch({ type: 'reset' }),
+    isTerminal: isTerminal(snapshot.currentStatus),
   };
 }

@@ -38,7 +38,6 @@ pub enum DcaInstructionKind {
     WithdrawFees(serde_json::Value),
 }
 
-#[cfg(feature = "wasm")]
 pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
     ("OpenDca", EventType::Created),
     ("OpenDcaV2", EventType::Created),
@@ -50,7 +49,6 @@ pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
     ("EndAndClose", EventType::Closed),
 ];
 
-#[cfg(feature = "wasm")]
 pub const EVENT_EVENT_TYPES: &[(&str, EventType)] = &[
     ("OpenedEvent", EventType::Created),
     ("FilledEvent", EventType::FillCompleted),
@@ -60,7 +58,6 @@ pub const EVENT_EVENT_TYPES: &[(&str, EventType)] = &[
     ("DepositEvent", EventType::Deposited),
 ];
 
-#[cfg(feature = "wasm")]
 pub const CLOSED_VARIANTS: &[&str] = &["Completed", "Cancelled", "Expired"];
 
 /// Jupiter DCA protocol adapter (zero-sized, stored as a static).
@@ -135,26 +132,7 @@ impl ProtocolAdapter for DcaAdapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
-        let kind: DcaInstructionKind = serde_json::from_value(wrapper).ok()?;
-        match kind {
-            DcaInstructionKind::OpenDca(_) | DcaInstructionKind::OpenDcaV2(_) => {
-                Some(EventType::Created)
-            }
-            DcaInstructionKind::InitiateFlashFill(_) | DcaInstructionKind::InitiateDlmmFill(_) => {
-                Some(EventType::FillInitiated)
-            }
-            DcaInstructionKind::FulfillFlashFill(_) | DcaInstructionKind::FulfillDlmmFill(_) => {
-                Some(EventType::FillCompleted)
-            }
-            DcaInstructionKind::CloseDca(_) | DcaInstructionKind::EndAndClose(_) => {
-                Some(EventType::Closed)
-            }
-            DcaInstructionKind::Transfer(_)
-            | DcaInstructionKind::Deposit(_)
-            | DcaInstructionKind::Withdraw(_)
-            | DcaInstructionKind::WithdrawFees(_) => None,
-        }
+        ProtocolHelpers::lookup_event_type(&ix.instruction_name, INSTRUCTION_EVENT_TYPES)
     }
 
     fn classify_and_resolve_event(
@@ -392,7 +370,12 @@ impl DcaAdapter {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions")]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test assertions"
+)]
 mod tests {
     use super::*;
     use crate::lifecycle::TerminalStatus;
