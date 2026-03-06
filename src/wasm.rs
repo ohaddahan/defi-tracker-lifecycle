@@ -95,6 +95,80 @@ fn variant_maps_for_protocol(
     }
 }
 
+fn lookup_transition_summary(event_type: EventType) -> (String, String) {
+    if event_type == EventType::Closed {
+        return ("Close(...)/MetadataOnly".to_string(), "Apply".to_string());
+    }
+
+    let transition = mapping::event_type_to_transition(&event_type, None);
+    (
+        mapping::transition_to_display(&transition),
+        format!("{:?}", LifecycleEngine::decide_transition(None, transition)),
+    )
+}
+
+fn lookup_notes(
+    protocol: Protocol,
+    source: &str,
+    variant_name: &str,
+    event_type: EventType,
+) -> Vec<String> {
+    let mut notes = vec![
+        "Static lookup only: the variant key matched, but payload fields were not validated."
+            .to_string(),
+    ];
+
+    if source == "instruction" {
+        notes.push(
+            "Instruction lookups do not resolve correlation outcomes or payload data.".to_string(),
+        );
+    }
+
+    if event_type == EventType::Closed {
+        notes.push(
+            "Closed only becomes Close(...) when a terminal status is provided; otherwise the canonical mapping falls back to MetadataOnly."
+                .to_string(),
+        );
+    }
+
+    match (protocol, variant_name) {
+        (Protocol::Dca, "ClosedEvent") => notes.push(
+            "DCA ClosedEvent derives terminal status from user_closed and unfilled_amount."
+                .to_string(),
+        ),
+        (Protocol::Kamino, "OrderDisplayEvent") => notes.push(
+            "Kamino OrderDisplayEvent needs pre_fetched_order_pdas to correlate and can carry a terminal status in its payload."
+                .to_string(),
+        ),
+        (Protocol::Kamino, "UserSwapBalancesEvent") => notes.push(
+            "Kamino UserSwapBalancesEvent is diagnostic-only: correlation is not required and the payload is ignored."
+                .to_string(),
+        ),
+        _ => {}
+    }
+
+    notes
+}
+
+fn lookup_result(
+    protocol: Protocol,
+    source: &str,
+    variant_name: &str,
+    event_type: EventType,
+) -> JsValue {
+    let (transition, decision) = lookup_transition_summary(event_type);
+    let notes = lookup_notes(protocol, source, variant_name, event_type);
+
+    to_js(&serde_json::json!({
+        "variantName": variant_name,
+        "source": source,
+        "eventType": event_type_to_pascal(&event_type),
+        "transition": transition,
+        "decisionFromNone": decision,
+        "notes": notes,
+    }))
+}
+
 /// Returns protocol configs with instruction/event→EventType mappings.
 #[wasm_bindgen]
 pub fn get_all_protocols() -> JsValue {
@@ -142,9 +216,9 @@ pub fn get_all_protocols() -> JsValue {
     to_js(&serde_json::Value::Array(result))
 }
 
-/// Classify a JSON payload against a protocol's known variant names.
+/// Performs a static variant lookup against a protocol's known variant names.
 #[wasm_bindgen]
-pub fn classify_json(protocol: &str, json: &str) -> JsValue {
+pub fn lookup_variant(protocol: &str, json: &str) -> JsValue {
     let Some(proto) = parse_protocol(protocol) else {
         return error_result("Unknown protocol");
     };
@@ -166,36 +240,20 @@ pub fn classify_json(protocol: &str, json: &str) -> JsValue {
 
     let (ix_map, ev_map, _) = variant_maps_for_protocol(proto);
 
-    if let Some(et) = ev_map
+    if let Some(event_type) = ev_map
         .iter()
-        .find(|(n, _)| *n == variant_name)
-        .map(|(_, et)| et)
+        .find(|(name, _)| *name == variant_name)
+        .map(|(_, event_type)| *event_type)
     {
-        let transition = mapping::event_type_to_transition(et, None);
-        let result = serde_json::json!({
-            "variantName": variant_name,
-            "source": "event",
-            "eventType": event_type_to_pascal(et),
-            "transition": mapping::transition_to_display(&transition),
-            "decision": format!("{:?}", LifecycleEngine::decide_transition(None, transition)),
-        });
-        return to_js(&result);
+        return lookup_result(proto, "event", &variant_name, event_type);
     }
 
-    if let Some(et) = ix_map
+    if let Some(event_type) = ix_map
         .iter()
-        .find(|(n, _)| *n == variant_name)
-        .map(|(_, et)| et)
+        .find(|(name, _)| *name == variant_name)
+        .map(|(_, event_type)| *event_type)
     {
-        let transition = mapping::event_type_to_transition(et, None);
-        let result = serde_json::json!({
-            "variantName": variant_name,
-            "source": "instruction",
-            "eventType": event_type_to_pascal(et),
-            "transition": mapping::transition_to_display(&transition),
-            "decision": format!("{:?}", LifecycleEngine::decide_transition(None, transition)),
-        });
-        return to_js(&result);
+        return lookup_result(proto, "instruction", &variant_name, event_type);
     }
 
     let all_events: Vec<&str> = ev_map.iter().map(|(n, _)| *n).collect();

@@ -23,7 +23,6 @@ pub enum LimitV2InstructionKind {
     WithdrawFee(serde_json::Value),
 }
 
-#[cfg(feature = "wasm")]
 pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
     ("InitializeOrder", EventType::Created),
     ("PreFlashFillOrder", EventType::FillInitiated),
@@ -31,14 +30,12 @@ pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
     ("CancelOrder", EventType::Cancelled),
 ];
 
-#[cfg(feature = "wasm")]
 pub const EVENT_EVENT_TYPES: &[(&str, EventType)] = &[
     ("CreateOrderEvent", EventType::Created),
     ("CancelOrderEvent", EventType::Cancelled),
     ("TradeEvent", EventType::FillCompleted),
 ];
 
-#[cfg(feature = "wasm")]
 pub const CLOSED_VARIANTS: &[&str] = &[];
 
 /// Jupiter Limit Order v2 protocol adapter (zero-sized, stored as a static).
@@ -113,15 +110,7 @@ impl ProtocolAdapter for LimitV2Adapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
-        let kind: LimitV2InstructionKind = serde_json::from_value(wrapper).ok()?;
-        match kind {
-            LimitV2InstructionKind::InitializeOrder(_) => Some(EventType::Created),
-            LimitV2InstructionKind::PreFlashFillOrder(_) => Some(EventType::FillInitiated),
-            LimitV2InstructionKind::FlashFillOrder(_) => Some(EventType::FillCompleted),
-            LimitV2InstructionKind::CancelOrder(_) => Some(EventType::Cancelled),
-            LimitV2InstructionKind::UpdateFee(_) | LimitV2InstructionKind::WithdrawFee(_) => None,
-        }
+        ProtocolHelpers::lookup_event_type(&ix.instruction_name, INSTRUCTION_EVENT_TYPES)
     }
 
     fn classify_and_resolve_event(
@@ -321,7 +310,12 @@ impl LimitV2Adapter {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions")]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test assertions"
+)]
 mod tests {
     use super::*;
 

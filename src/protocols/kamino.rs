@@ -29,7 +29,6 @@ pub enum KaminoInstructionKind {
     LogUserSwapBalances(serde_json::Value),
 }
 
-#[cfg(feature = "wasm")]
 pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
     ("CreateOrder", EventType::Created),
     ("TakeOrder", EventType::FillCompleted),
@@ -38,13 +37,11 @@ pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
     ("CloseOrderAndClaimTip", EventType::Closed),
 ];
 
-#[cfg(feature = "wasm")]
 pub const EVENT_EVENT_TYPES: &[(&str, EventType)] = &[
     ("OrderDisplayEvent", EventType::FillCompleted),
     ("UserSwapBalancesEvent", EventType::FillCompleted),
 ];
 
-#[cfg(feature = "wasm")]
 pub const CLOSED_VARIANTS: &[&str] = &["Completed", "Cancelled", "Expired"];
 
 /// Kamino Limit Order protocol adapter (zero-sized, stored as a static).
@@ -114,21 +111,7 @@ impl ProtocolAdapter for KaminoAdapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
-        let kind: KaminoInstructionKind = serde_json::from_value(wrapper).ok()?;
-        match kind {
-            KaminoInstructionKind::CreateOrder(_) => Some(EventType::Created),
-            KaminoInstructionKind::TakeOrder(_) => Some(EventType::FillCompleted),
-            KaminoInstructionKind::FlashTakeOrderStart(_) => Some(EventType::FillInitiated),
-            KaminoInstructionKind::FlashTakeOrderEnd(_) => Some(EventType::FillCompleted),
-            KaminoInstructionKind::CloseOrderAndClaimTip(_) => Some(EventType::Closed),
-            KaminoInstructionKind::InitializeGlobalConfig(_)
-            | KaminoInstructionKind::InitializeVault(_)
-            | KaminoInstructionKind::UpdateGlobalConfig(_)
-            | KaminoInstructionKind::UpdateGlobalConfigAdmin(_)
-            | KaminoInstructionKind::WithdrawHostTip(_)
-            | KaminoInstructionKind::LogUserSwapBalances(_) => None,
-        }
+        ProtocolHelpers::lookup_event_type(&ix.instruction_name, INSTRUCTION_EVENT_TYPES)
     }
 
     fn classify_and_resolve_event(
@@ -344,7 +327,12 @@ impl KaminoAdapter {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions")]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test assertions"
+)]
 mod tests {
     use super::*;
 

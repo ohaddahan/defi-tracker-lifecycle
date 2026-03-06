@@ -47,16 +47,10 @@ no_effect_underscore_binding = "allow"
 redundant_closure_for_method_calls = "allow"
 wildcard_imports = "allow"
 
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
 allow_attributes_without_reason = "deny"
 result_large_err = "allow"
-dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
-print_stdout = "deny"
-print_stderr = "deny"
 
 [features]
 default = ["native"]

@@ -260,10 +260,10 @@ mod tests {
                 "step {i}: expected {expected_decision:?} for {transition:?} with terminal {current_terminal:?}"
             );
 
-            if decision == TransitionDecision::Apply {
-                if let LifecycleTransition::Close { status } = transition {
-                    current_terminal = Some(*status);
-                }
+            if decision == TransitionDecision::Apply
+                && let LifecycleTransition::Close { status } = transition
+            {
+                current_terminal = Some(*status);
             }
         }
     }

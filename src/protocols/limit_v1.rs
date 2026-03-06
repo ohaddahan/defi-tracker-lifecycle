@@ -26,7 +26,6 @@ pub enum LimitV1InstructionKind {
     UpdateFee(serde_json::Value),
 }
 
-#[cfg(feature = "wasm")]
 pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
     ("InitializeOrder", EventType::Created),
     ("PreFlashFillOrder", EventType::FillInitiated),
@@ -36,14 +35,12 @@ pub const INSTRUCTION_EVENT_TYPES: &[(&str, EventType)] = &[
     ("CancelExpiredOrder", EventType::Expired),
 ];
 
-#[cfg(feature = "wasm")]
 pub const EVENT_EVENT_TYPES: &[(&str, EventType)] = &[
     ("CreateOrderEvent", EventType::Created),
     ("CancelOrderEvent", EventType::Cancelled),
     ("TradeEvent", EventType::FillCompleted),
 ];
 
-#[cfg(feature = "wasm")]
 pub const CLOSED_VARIANTS: &[&str] = &[];
 
 /// Jupiter Limit Order v1 protocol adapter (zero-sized, stored as a static).
@@ -111,20 +108,7 @@ impl ProtocolAdapter for LimitV1Adapter {
     }
 
     fn classify_instruction(&self, ix: &RawInstruction) -> Option<EventType> {
-        let wrapper = serde_json::json!({ &ix.instruction_name: ix.args });
-        let kind: LimitV1InstructionKind = serde_json::from_value(wrapper).ok()?;
-        match kind {
-            LimitV1InstructionKind::InitializeOrder(_) => Some(EventType::Created),
-            LimitV1InstructionKind::PreFlashFillOrder(_) => Some(EventType::FillInitiated),
-            LimitV1InstructionKind::FillOrder(_) | LimitV1InstructionKind::FlashFillOrder(_) => {
-                Some(EventType::FillCompleted)
-            }
-            LimitV1InstructionKind::CancelOrder(_) => Some(EventType::Cancelled),
-            LimitV1InstructionKind::CancelExpiredOrder(_) => Some(EventType::Expired),
-            LimitV1InstructionKind::WithdrawFee(_)
-            | LimitV1InstructionKind::InitFee(_)
-            | LimitV1InstructionKind::UpdateFee(_) => None,
-        }
+        ProtocolHelpers::lookup_event_type(&ix.instruction_name, INSTRUCTION_EVENT_TYPES)
     }
 
     fn classify_and_resolve_event(
@@ -312,7 +296,12 @@ impl LimitV1Adapter {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions")]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test assertions"
+)]
 mod tests {
     use super::*;
 

@@ -61,7 +61,6 @@ pub fn transition_target(transition: &LifecycleTransition) -> Option<&'static st
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions")]
 mod tests {
     use super::*;
 
