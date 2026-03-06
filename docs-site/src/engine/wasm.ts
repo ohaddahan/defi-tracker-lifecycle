@@ -1,8 +1,8 @@
 import {
-  classify_json as wasmClassifyJson,
   decide_transition as wasmDecideTransition,
   get_all_protocols as wasmGetAllProtocols,
   is_terminal as wasmIsTerminal,
+  lookup_variant as wasmLookupVariant,
   normalize_snapshot as wasmNormalizeSnapshot,
   wasm_event_type_to_transition as wasmEventTypeToTransition,
   wasm_transition_to_string as wasmTransitionToString,
@@ -10,10 +10,10 @@ import {
 } from '../wasm-pkg/defi_tracker_lifecycle';
 
 export {
-  wasmClassifyJson,
   wasmDecideTransition,
   wasmGetAllProtocols,
   wasmIsTerminal,
+  wasmLookupVariant,
   wasmNormalizeSnapshot,
   wasmEventTypeToTransition,
   wasmTransitionToString,

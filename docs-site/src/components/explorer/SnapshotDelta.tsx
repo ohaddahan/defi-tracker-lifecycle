@@ -7,33 +7,54 @@ export default function SnapshotDelta() {
   const result = normalizeSnapshotToDelta(stored, snapshot);
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-[10px] text-dim font-mono min-w-[90px]">Stored total</span>
-        <input
-          type="number"
-          value={stored}
-          onChange={(e) => setStored(Number(e.target.value) || 0)}
-          className="w-24 rounded-md border border-border bg-bg-elevated px-2 py-1.5 font-mono text-sm text-text focus:outline-none focus:border-accent/40 transition-colors"
-        />
+    <div className="space-y-3">
+      <p className="text-sm text-dim leading-relaxed">
+        Snapshot deltas never go negative. Regressions clamp the delta to `0` and mark the event
+        for review.
+      </p>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1.5 block text-[10px] text-dim font-mono uppercase tracking-wider">
+            Stored Total
+          </span>
+          <input
+            type="number"
+            name="stored_total"
+            inputMode="numeric"
+            autoComplete="off"
+            value={stored}
+            onChange={(e) => setStored(Number(e.target.value) || 0)}
+            className="focus-ring ui-transition w-full rounded-md border border-border bg-bg-elevated px-3 py-2 font-mono text-sm text-text"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1.5 block text-[10px] text-dim font-mono uppercase tracking-wider">
+            Snapshot Total
+          </span>
+          <input
+            type="number"
+            name="snapshot_total"
+            inputMode="numeric"
+            autoComplete="off"
+            value={snapshot}
+            onChange={(e) => setSnapshot(Number(e.target.value) || 0)}
+            className="focus-ring ui-transition w-full rounded-md border border-border bg-bg-elevated px-3 py-2 font-mono text-sm text-text"
+          />
+        </label>
       </div>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-[10px] text-dim font-mono min-w-[90px]">Snapshot total</span>
-        <input
-          type="number"
-          value={snapshot}
-          onChange={(e) => setSnapshot(Number(e.target.value) || 0)}
-          className="w-24 rounded-md border border-border bg-bg-elevated px-2 py-1.5 font-mono text-sm text-text focus:outline-none focus:border-accent/40 transition-colors"
-        />
-      </div>
-      <div className="rounded-md border border-border bg-bg-elevated px-3 py-2.5 font-mono text-sm">
-        <span className="text-dim">delta:</span>{' '}
-        <span className="text-accent font-semibold">{result.delta}</span>
-        <span className="text-dim/30 mx-2">|</span>
-        <span className="text-dim">regr:</span>{' '}
-        <span className={`font-semibold ${result.regression ? 'text-red' : 'text-green'}`}>
-          {String(result.regression)}
-        </span>
+
+      <div className="rounded-xl border border-border bg-bg-elevated px-4 py-3 font-mono text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-dim">delta</span>
+          <span className="text-accent font-semibold">{result.delta}</span>
+          <span className="text-dim/30">|</span>
+          <span className="text-dim">regression</span>
+          <span className={`font-semibold ${result.regression ? 'text-red' : 'text-green'}`}>
+            {String(result.regression)}
+          </span>
+        </div>
       </div>
     </div>
   );

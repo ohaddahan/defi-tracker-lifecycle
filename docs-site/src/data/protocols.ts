@@ -15,6 +15,18 @@ export type EventType =
 
 export type ProtocolId = 'dca' | 'limitV1' | 'limitV2' | 'kamino';
 
+export const EVENT_TYPE_ORDER: EventType[] = [
+  'Created',
+  'FillInitiated',
+  'FillCompleted',
+  'Cancelled',
+  'Expired',
+  'Closed',
+  'FeeCollected',
+  'Withdrawn',
+  'Deposited',
+];
+
 export interface ProtocolConfig {
   id: ProtocolId;
   label: string;
@@ -45,7 +57,7 @@ const UI_METADATA: Record<
     notes: [
       'ClosedEvent terminal status derived from user_closed + unfilled_amount fields',
       'Priority: user_closed → Cancelled, unfilled_amount == 0 → Completed, else → Expired',
-      'Transfer/Deposit/Withdraw/WithdrawFees instructions are classified as None (irrelevant)',
+      'Transfer, Deposit, Withdraw, and WithdrawFees instructions are ignored by classification',
     ],
   },
   limit_v1: {
@@ -55,7 +67,7 @@ const UI_METADATA: Record<
     notes: [
       'CancelExpiredOrder instruction maps to Expired EventType (V2 has no expiry instruction)',
       'TradeEvent uses in_amount/out_amount field names (V1 naming)',
-      'WithdrawFee/InitFee/UpdateFee instructions are classified as None',
+      'WithdrawFee, InitFee, and UpdateFee instructions are ignored by classification',
     ],
   },
   limit_v2: {
@@ -66,7 +78,7 @@ const UI_METADATA: Record<
       'No CancelExpiredOrder — V2 has no expiry instruction',
       'TradeEvent uses making_amount/taking_amount field names (V2 naming)',
       'Args may be nested in {"params": {...}} wrapper or flat — adapter handles both',
-      'UpdateFee/WithdrawFee instructions are classified as None',
+      'UpdateFee and WithdrawFee instructions are ignored by classification',
     ],
   },
   kamino: {
@@ -78,7 +90,7 @@ const UI_METADATA: Record<
       'Returns Uncorrelated if PDAs missing',
       'UserSwapBalancesEvent is diagnostic-only (NotRequired correlation → MetadataOnly transition)',
       'Status codes: 0=Open, 1=Filled(Completed), 2=Cancelled, 3=Expired',
-      'Admin instructions (InitializeGlobalConfig, etc.) are classified as None',
+      'Admin instructions (InitializeGlobalConfig, etc.) are ignored by classification',
     ],
   },
 };

@@ -27,7 +27,7 @@ export default function TestPyramid() {
           }}
         >
           <div className="text-[11px] font-semibold" style={{ color: layer.color }}>
-            Layer {LAYERS.length - i}: {layer.label}
+            {layer.label}
           </div>
           <div className="text-[9px] text-dim/60 font-mono mt-0.5">{layer.desc}</div>
         </motion.div>

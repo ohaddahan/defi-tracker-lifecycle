@@ -13,9 +13,10 @@ export default function PresetBar({ onRun, running }: Props) {
         return (
           <button
             key={p.name}
+            type="button"
             onClick={() => onRun(p)}
             disabled={running !== null}
-            className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-all cursor-pointer ${
+            className={`focus-ring ui-transition rounded-md border px-2.5 py-1 text-[11px] font-medium ${
               isRunning
                 ? 'accent-gradient-bg border-transparent text-bg font-semibold'
                 : 'border-border text-dim hover:border-border-active hover:text-text bg-bg-elevated/30'
