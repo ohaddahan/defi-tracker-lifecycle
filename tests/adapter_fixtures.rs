@@ -43,6 +43,41 @@ fn no_context() -> ResolveContext {
     }
 }
 
+#[test]
+fn raw_path_metadata_deserializes_and_derives_parent_instruction_path() {
+    let ix: RawInstruction = serde_json::from_value(serde_json::json!({
+        "id": 1,
+        "signature": "sig",
+        "instruction_index": 4,
+        "instruction_path": "4",
+        "program_id": "p",
+        "inner_program_id": "p",
+        "instruction_name": "CloseOrderAndClaimTip",
+        "accounts": null,
+        "args": null,
+        "slot": 1
+    }))
+    .unwrap_or_else(|e| panic!("failed to deserialize RawInstruction path metadata: {e}"));
+    let ev: RawEvent = serde_json::from_value(serde_json::json!({
+        "id": 2,
+        "signature": "sig",
+        "event_index": 1,
+        "event_path": "4.1",
+        "program_id": "p",
+        "inner_program_id": "p",
+        "event_name": "OrderDisplayEvent",
+        "fields": null,
+        "slot": 1
+    }))
+    .unwrap_or_else(|e| panic!("failed to deserialize RawEvent path metadata: {e}"));
+
+    assert_eq!(ix.instruction_path.as_deref(), Some("4"));
+    assert_eq!(ev.event_path.as_deref(), Some("4.1"));
+    assert_eq!(ev.parent_instruction_path(), Some("4"));
+    assert_eq!(RawEvent::parent_instruction_path_from("7.1"), "7");
+    assert_eq!(RawEvent::parent_instruction_path_from("5"), "5");
+}
+
 // ──────────────────── DCA ────────────────────
 
 #[test]
@@ -578,6 +613,7 @@ fn make_event(name: &str, fields: serde_json::Value) -> RawEvent {
         id: 1,
         signature: "test_sig".to_string(),
         event_index: 0,
+        event_path: None,
         program_id: "p".to_string(),
         inner_program_id: "p".to_string(),
         event_name: name.to_string(),
@@ -805,6 +841,7 @@ fn lifecycle_limit_v2_instruction_driven_create_fill_cancel() {
         id: 1,
         signature: "sig".to_string(),
         instruction_index: 0,
+        instruction_path: None,
         program_id: "p".to_string(),
         inner_program_id: "p".to_string(),
         instruction_name: name.to_string(),
@@ -859,6 +896,7 @@ fn lifecycle_kamino_create_fill_close_completed() {
         id: 1,
         signature: "sig".to_string(),
         instruction_index: 0,
+        instruction_path: None,
         program_id: "p".to_string(),
         inner_program_id: "p".to_string(),
         instruction_name: name.to_string(),

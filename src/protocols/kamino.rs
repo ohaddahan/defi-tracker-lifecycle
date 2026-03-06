@@ -53,7 +53,7 @@ pub struct KaminoAdapter;
 
 /// Serde intermediate for `OrderDisplayEvent` fields.
 ///
-/// This event carries no order PDA — correlation requires [`ResolveContext::pre_fetched_order_pdas`].
+/// This event carries no order PDA. Callers should use path-aware prefetch when available and then pass the resolved PDA(s) through [`ResolveContext::pre_fetched_order_pdas`].
 #[derive(serde::Deserialize)]
 pub struct OrderDisplayEventFields {
     #[serde(default)]
@@ -149,14 +149,14 @@ impl ProtocolAdapter for KaminoAdapter {
             }
         };
 
-        Some(Self::resolve_event(envelope, &ev.signature, ctx))
+        Some(Self::resolve_event(envelope, ev, ctx))
     }
 }
 
 impl KaminoAdapter {
     fn resolve_event(
         envelope: KaminoEventEnvelope,
-        signature: &str,
+        ev: &RawEvent,
         ctx: &ResolveContext,
     ) -> Result<(EventType, CorrelationOutcome, EventPayload), Error> {
         match envelope {
@@ -169,11 +169,20 @@ impl KaminoAdapter {
                 let order_pdas = ctx.pre_fetched_order_pdas.clone().unwrap_or_default();
 
                 if order_pdas.is_empty() {
+                    let correlation_target = ev.parent_instruction_path().map_or_else(
+                        || format!("signature {}", ev.signature),
+                        |instruction_path| {
+                            format!(
+                                "signature {} and instruction_path {}",
+                                ev.signature, instruction_path
+                            )
+                        },
+                    );
                     return Ok((
                         EventType::FillCompleted,
                         CorrelationOutcome::Uncorrelated {
                             reason: format!(
-                                "cannot correlate Kamino OrderDisplayEvent for signature {signature}"
+                                "cannot correlate Kamino OrderDisplayEvent for {correlation_target}"
                             ),
                         },
                         EventPayload::None,
@@ -353,6 +362,7 @@ mod tests {
             id: 1,
             signature: signature.to_string(),
             event_index: 0,
+            event_path: None,
             program_id: "p".to_string(),
             inner_program_id: "p".to_string(),
             event_name: "test".to_string(),
@@ -391,6 +401,7 @@ mod tests {
                 id: 1,
                 signature: "sig".to_string(),
                 instruction_index: 0,
+                instruction_path: None,
                 program_id: "p".to_string(),
                 inner_program_id: "p".to_string(),
                 instruction_name: name.to_string(),
@@ -466,6 +477,7 @@ mod tests {
                 id: 1,
                 signature: "s".to_string(),
                 instruction_index: 0,
+                instruction_path: None,
                 program_id: "p".to_string(),
                 inner_program_id: "p".to_string(),
                 instruction_name: "FlashTakeOrderStart".to_string(),
@@ -480,6 +492,7 @@ mod tests {
                 id: 1,
                 signature: "s".to_string(),
                 instruction_index: 0,
+                instruction_path: None,
                 program_id: "p".to_string(),
                 inner_program_id: "p".to_string(),
                 instruction_name: "FlashTakeOrderEnd".to_string(),
@@ -773,6 +786,7 @@ mod tests {
                 id: 1,
                 signature: "sig".to_string(),
                 instruction_index: 0,
+                instruction_path: None,
                 program_id: "p".to_string(),
                 inner_program_id: "p".to_string(),
                 instruction_name: name.to_string(),
