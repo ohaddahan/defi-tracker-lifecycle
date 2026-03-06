@@ -71,7 +71,8 @@ docs-site/
 ## Conventions
 
 - `thiserror` for all errors. `reason` field for string context (not `source`).
-- `#[expect(clippy::unwrap_used, reason = "...")]` on test modules (not `#[allow(...)]`)
+- Keep `unwrap`/`expect`/`panic` denies in `lib.rs`, not `Cargo.toml`, so `cargo clippy --all-targets` stays strict in production code without forcing test rewrites.
+- `#[expect(clippy::unwrap_used, reason = "...")]` on test modules (not `#[allow(...)]`); add `expect_used` / `panic` only where the test actually needs them.
 - `#[expect(dead_code, reason = "...")]` on instruction kind enums (inner `serde_json::Value` consumed by serde, not read)
 - `#[expect(clippy::enum_variant_names, reason = "...")]` on event envelopes (variant names mirror Carbon)
 - `cfg_attr(not(test), deny(...))` in lib.rs for production-only denies

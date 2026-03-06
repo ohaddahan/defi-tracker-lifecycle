@@ -1,3 +1,6 @@
+// Keep these denies out of Cargo.toml: global lint denies also apply to test targets,
+// while this repo intentionally allows concise unwrap/expect/panic assertions in tests
+// behind scoped `#[expect(..., reason = "...")]` annotations.
 #![cfg_attr(
     not(test),
     deny(
